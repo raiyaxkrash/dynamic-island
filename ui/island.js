@@ -3,12 +3,15 @@
 (() => {
   const { invoke } = window.__TAURI__.core;
   const { listen } = window.__TAURI__.event;
+  const I18N = window.DI_I18N;
   const $ = (id) => document.getElementById(id);
   const island = $('island');
   const pdots = $('pdots');
   const views = [...document.querySelectorAll('.view')];
   const $$home = document.querySelector('.v-home');
   const mediaRestore = $('mediaRestore');
+  const L = () => I18N.resolveLang(st.settings.lang);
+  const T = (k, v) => I18N.t(L(), k, v);
   // Анимации выключаются только своей настройкой в трее. Системный флаг «уменьшить движение»
   // не слушаем: его часто выключают твикеры (Atlas OS и подобные), и остров начинает прыгать.
   let reduceMotion = false;
@@ -21,8 +24,10 @@
     idle: [124, 30, 15],
     mini: [206, 32, 16],
     tmini: [150, 32, 16],
-    home: [392, 116, 30],
+    home: [416, 116, 30],
     music: [392, 166, 38],
+    audio: [340, 120, 26],
+    shelf: [392, 132, 28],
     peek: [330, 54, 27],
     volume: [290, 36, 18],
     charge: [290, 36, 18],
@@ -34,7 +39,7 @@
     done: [420, 62, 31],
   };
   const VIEW = { sliverHot: 'sliver' };
-  const TOP = 6;
+  const topMargin = () => (typeof st?.settings?.top_margin === 'number' ? st.settings.top_margin : 6);
   // Сколько держать курсор над островом, прежде чем он раскроется.
   // Над вкладками и заголовками дольше, чтобы остров не выскакивал, когда тянешься к вкладке.
   const DWELL = { normal: 90, busy: 450 }; // busy меняется в настройках
@@ -55,13 +60,16 @@
     volume: null,
     hover: false,
     pinned: false,
+    dragHover: false,
+    subview: null,
     pending: false,
     hud: null,
     device: null,
+    shelf: [],
     full: false,
     topbusy: false,
     privacy: { mic: [], cam: [] },
-    settings: { sounds: true },
+    settings: { sounds: true, top_margin: 6, lang: 'auto' },
     demo: false,
     sys: null,
     pomodoros: 0,
@@ -84,7 +92,7 @@
     h: spring(30),
     r: spring(15),
     rt: spring(15),
-    top: spring(TOP),
+    top: spring(6),
     x: spring(0, 220, 20), // лёгкий сдвиг вбок при переключении трека
   };
   let raf = 0;
@@ -188,13 +196,16 @@
     nextView = '';
   }
 
-  // Домашний экран измеряет свою естественную высоту по содержимому.
-  function homeHeight() {
-    $$home.style.height = 'auto';
-    return Math.ceil($$home.offsetHeight);
+  // Домашний экран и панели измеряют свою естественную высоту по содержимому.
+  function measureHeight(el, maxH) {
+    el.style.height = 'auto';
+    const h = Math.ceil(el.offsetHeight);
+    return maxH ? Math.min(h, maxH) : h;
   }
   function sizeOf(m) {
-    if (m === 'home') return [392, homeHeight(), 30];
+    if (m === 'home') return [416, measureHeight($$home), 30];
+    if (m === 'audio') return [340, measureHeight(document.querySelector('[data-view="audio"]'), 172), 26];
+    if (m === 'shelf') return [392, measureHeight(document.querySelector('[data-view="shelf"]'), 172), 28];
     return SIZE[m];
   }
 
@@ -210,13 +221,17 @@
   function longPaused() {
     return st.settings.hide_paused !== false && !st.media.playing && st.pausedSince && Date.now() - st.pausedSince > 180000;
   }
-  setInterval(() => { if (!st.hover && !st.hud && mode() !== island.dataset.mode) render(); }, 5000);
+  setInterval(() => { if (!st.hover && !st.pinned && !st.hud && mode() !== island.dataset.mode) render(); }, 5000);
 
   function mode() {
     if (st.full) return 'hidden';
+    if (st.dragHover) return 'shelf';
     const expanded = st.hover || st.pinned;
     if (st.hud && (st.hud.force || !expanded)) return st.hud.type;
-    if (expanded) return st.media.active && !st.mediaHidden ? 'music' : 'home';
+    if (expanded) {
+      if (st.subview) return st.subview;
+      return st.media.active && !st.mediaHidden ? 'music' : 'home';
+    }
     const c = compact();
     if (c === 'sliver' && st.pending) return 'sliverHot';
     return c;
@@ -227,23 +242,26 @@
     const v = VIEW[m] || m;
     island.dataset.mode = m;
     island.classList.toggle('playing', !!st.media.playing && !st.mediaHidden);
+    island.classList.toggle('drag-over', !!st.dragHover);
     mediaRestore.hidden = !st.mediaHidden;
     const [w, h, r] = sizeOf(m);
-    if (m === 'home') {
-      $$home.style.width = w + 'px';
-      $$home.style.height = h + 'px';
+    if (m === 'home' || m === 'audio' || m === 'shelf') {
+      const viewEl = document.querySelector(`[data-view="${m}"]`);
+      viewEl.style.width = w + 'px';
+      viewEl.style.height = h + 'px';
     }
     const sliver = v === 'sliver';
-    setTargets(w, h, r, sliver ? 0 : r, sliver ? 0 : TOP);
+    const top = topMargin();
+    setTargets(w, h, r, sliver ? 0 : r, sliver ? 0 : top);
     requestView(v);
 
     // Мышь остров ловит, когда раскрыт, ждёт ответа («таймер закончился») или
     // включена опция колёсика над свёрнутым островом при свободном верхе экрана.
-    const interactive = st.hover || st.pinned || m === 'done';
+    const interactive = st.hover || st.pinned || st.dragHover || m === 'done';
     const wheelOnly = !interactive && !!st.settings.wheel_collapsed && !st.topbusy && (m === 'idle' || m === 'mini' || m === 'tmini');
     if (m === 'hidden') sendRect(0, 0, 0, 0, false);
     else if (sliver) sendRect((innerWidth - w) / 2 - 12, 0, w + 24, 14, false);
-    else sendRect((innerWidth - w) / 2 - 4, 0, w + 8, h + TOP + 4, interactive || wheelOnly);
+    else sendRect((innerWidth - w) / 2 - 4, 0, w + 8, h + top + 4, interactive || wheelOnly);
     live();
   }
 
@@ -282,9 +300,10 @@
 
   function live() {
     const d = new Date();
+    const lang = L();
     setLive('time', `${pad(d.getHours())}:${pad(d.getMinutes())}`);
-    const date = d.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' });
-    setLive('date', st.pomodoros ? `${date} · ${st.pomodoros} ${plural(st.pomodoros, 'помодоро', 'помодоро', 'помодоро')}` : date);
+    const date = d.toLocaleDateString(lang === 'en' ? 'en-US' : 'ru-RU', { weekday: 'short', day: 'numeric', month: 'short' });
+    setLive('date', st.pomodoros ? `${date} · 🍅 ${st.pomodoros}` : date);
 
     const running = timer.running();
     island.classList.toggle('has-timer', running);
@@ -296,7 +315,7 @@
       const left = timer.left();
       if (left <= 0 && !timer.paused) { finishTimer(); return; }
       setLive('tleft', fmt(left));
-      setLive('tlabel', timer.paused ? 'на паузе' : timer.label);
+      setLive('tlabel', timer.paused ? T('paused') : timer.label());
       const off = (50.27 * (1 - left / timer.total)).toFixed(2);
       document.querySelectorAll('.ring .rfg').forEach((c) => { c.style.strokeDashoffset = off; });
     }
@@ -310,23 +329,28 @@
     end: 0,
     rest: 0,
     paused: false,
-    label: '',
+    min: 0,
     kind: '',
+    label() {
+      if (this.kind === 'work') return T('pomo_work');
+      if (this.kind === 'break') return T('pomo_break');
+      return T('timer_for', { n: this.min });
+    },
     running() { return this.total > 0; },
     left() { return this.paused ? this.rest : Math.max(0, (this.end - Date.now()) / 1000); },
   };
   function startTimer(min, kind) {
     customOpen = false;
     timer.total = min * 60;
+    timer.min = min;
     timer.end = Date.now() + timer.total * 1000;
     timer.paused = false;
     timer.kind = kind || 'plain';
-    timer.label = kind === 'work' ? 'помодоро · работа' : kind === 'break' ? 'перерыв' : `таймер на ${min} мин`;
     render();
   }
   function setCustomMin(next) {
     customMin = Math.min(180, Math.max(1, next));
-    $('tCustomVal').textContent = `${customMin} мин`;
+    $('tCustomVal').textContent = T('min_short', { n: customMin });
   }
   function pauseTimer() {
     if (timer.paused) { timer.end = Date.now() + timer.rest * 1000; timer.paused = false; }
@@ -336,6 +360,7 @@
   function addMinute() {
     if (!timer.running()) return;
     timer.total += 60;
+    timer.min = Math.round(timer.total / 60);
     if (timer.paused) timer.rest += 60;
     else timer.end += 60000;
     live();
@@ -345,16 +370,16 @@
     const kind = timer.kind;
     const min = Math.round(timer.total / 60);
     timer.total = 0;
-    $('doneTitle').textContent = kind === 'work' ? 'Помодоро завершён' : kind === 'break' ? 'Перерыв окончен' : 'Время вышло';
-    $('doneSub').textContent = kind === 'work' ? 'Пора отдохнуть' : kind === 'break' ? 'Можно возвращаться к делам' : `Прошло ${min} мин`;
+    $('doneTitle').textContent = kind === 'work' ? T('pomo_done') : kind === 'break' ? T('break_done') : T('time_up');
+    $('doneSub').textContent = kind === 'work' ? T('time_to_rest') : kind === 'break' ? T('back_to_work') : T('elapsed_min', { n: min });
     const btn = $('doneBreak');
     if (kind === 'work') {
       btn.hidden = false;
-      btn.textContent = 'Перерыв 5 мин';
+      btn.textContent = T('break_5');
       btn.dataset.nextKind = 'break';
     } else if (kind === 'break') {
       btn.hidden = false;
-      btn.textContent = 'Ещё помодоро';
+      btn.textContent = T('another_pomo');
       btn.dataset.nextKind = 'work';
     } else {
       btn.hidden = true;
@@ -474,7 +499,7 @@
     if (!m.active) { st.pausedSince = 0; render(); return; }
 
     document.querySelectorAll('[data-bind]').forEach((el) => {
-      const v = m[el.dataset.bind] || (el.dataset.bind === 'artist' ? 'Неизвестный исполнитель' : '');
+      const v = m[el.dataset.bind] || (el.dataset.bind === 'artist' ? T('unknown_artist') : '');
       if (el.textContent !== v) el.textContent = v;
     });
     const srcEl = $('mediaSrc');
@@ -482,7 +507,7 @@
     const srcLabel = multi ? `${m.app || ''} · ${(m.sessionIndex || 0) + 1}/${m.sessions} ▾` : (m.app || '');
     if (srcEl.textContent !== srcLabel) srcEl.textContent = srcLabel;
     srcEl.classList.toggle('multi', multi);
-    srcEl.title = multi ? 'Нажмите, чтобы переключить источник' : '';
+    srcEl.title = multi ? T('switch_source') : '';
     if (m.playing) st.pausedSince = 0;
     else if (!st.pausedSince) st.pausedSince = Date.now();
 
@@ -533,6 +558,14 @@
     else if (a === 'settings') invoke('open_settings').catch(() => {});
     else if (a === 'privacy-settings') invoke('open_privacy_settings').catch(() => {});
     else if (a === 'sound-settings') invoke('open_sound_settings').catch(() => {});
+    else if (a === 'open-audio') openAudioPanel();
+    else if (a === 'open-shelf') { st.subview = 'shelf'; render(); }
+    else if (a === 'panel-back') { st.subview = null; render(); }
+    else if (a === 'set-audio-dev') {
+      invoke('set_audio_device', { id: b.dataset.id }).then(() => { st.subview = null; render(); }).catch(() => {});
+    }
+    else if (a === 'shelf-clear') invoke('shelf_clear').catch(() => {});
+    else if (a === 'shelf-remove') invoke('shelf_remove', { path: b.dataset.path }).catch(() => {});
     else if (a === 'cycle-media') invoke('media_cycle').catch(() => {});
     else if (a === 'hide-media' || a === 'show-media') {
       st.mediaHidden = a === 'hide-media';
@@ -592,8 +625,8 @@
     $('lowPct').textContent = p.percent + '%';
 
     if (initial || !prev || !p.battery) { render(); return; }
-    if (!prev.ac && p.ac) { $('chLbl').textContent = 'Зарядка'; setHud('charge', 2800); }
-    else if (p.ac && p.percent >= 100 && prev.percent < 100) { $('chLbl').textContent = 'Заряжено'; setHud('charge', 3200); }
+    if (!prev.ac && p.ac) { $('chLbl').textContent = T('charging'); setHud('charge', 2800); }
+    else if (p.ac && p.percent >= 100 && prev.percent < 100) { $('chLbl').textContent = T('charged'); setHud('charge', 3200); }
     else if (!p.ac && ((prev.percent > 20 && p.percent <= 20) || (prev.percent > 10 && p.percent <= 10))) setHud('low', 4500);
     else render();
   }
@@ -605,8 +638,8 @@
     document.body.classList.toggle('mic-on', mic.length > 0);
     document.body.classList.toggle('cam-on', cam.length > 0);
     const parts = [];
-    if (mic.length) parts.push('Микрофон: ' + mic.join(', '));
-    if (cam.length) parts.push('Камера: ' + cam.join(', '));
+    if (mic.length) parts.push(`${T('mic')}: ${mic.join(', ')}`);
+    if (cam.length) parts.push(`${T('cam')}: ${cam.join(', ')}`);
     const line = $('privLine');
     line.hidden = !parts.length;
     line.textContent = parts.join(' · ');
@@ -614,21 +647,42 @@
   }
 
   // ---------- буфер обмена ----------
-  function plural(n, one, few, many) {
-    const m10 = n % 10, m100 = n % 100;
-    if (m10 === 1 && m100 !== 11) return one;
-    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
-    return many;
-  }
   function applyClipboard(c) {
     let text = '';
     if (c.kind === 'text') text = c.text;
-    else if (c.kind === 'image') text = 'изображение';
-    else if (c.kind === 'files') text = `${c.count} ${plural(c.count, 'файл', 'файла', 'файлов')}`;
+    else if (c.kind === 'image') text = T('image');
+    else if (c.kind === 'files') text = `${c.count} ${I18N.plural(L(), c.count, 'files_plural')}`;
     else return;
     $('clipText').textContent = text;
-    if (st.hover) return;
+    if (st.hover || st.pinned) return;
     setHud('clip', 1800);
+  }
+
+  function applyLocale() {
+    document.documentElement.lang = L();
+    document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = T(el.dataset.i18n); });
+    document.querySelectorAll('[data-i18n-min]').forEach((el) => { el.textContent = T('min_short', { n: el.dataset.i18nMin }); });
+    $('tCustomVal').textContent = T('min_short', { n: customMin });
+    $('tCustomBtn').title = $('tCustomBtn').ariaLabel = T('custom_timer');
+    $('tCustomVal').title = T('custom_hint');
+    $('privLine').title = T('privacy_tip');
+    $('mediaRestore').title = $('mediaRestore').ariaLabel = T('restore_player');
+    $('soundSettingsBtn').title = $('soundSettingsBtn').ariaLabel = T('sound_settings');
+    $('shelfBtn').title = $('shelfBtn').ariaLabel = T('shelf_open');
+    $('vClipLbl') && ($('vClipLbl').textContent = T('copied'));
+    const clipLbl = island.querySelector('.v-clip .lbl');
+    if (clipLbl) clipLbl.textContent = T('copied');
+    const lowLbl = island.querySelector('.v-low .lbl');
+    if (lowLbl) lowLbl.textContent = T('low_battery');
+    if (st.privacy) {
+      const { mic, cam } = st.privacy;
+      const parts = [];
+      if (mic.length) parts.push(`${T('mic')}: ${mic.join(', ')}`);
+      if (cam.length) parts.push(`${T('cam')}: ${cam.join(', ')}`);
+      $('privLine').textContent = parts.join(' · ');
+    }
+    if (st.device) applyDevice(st.device, true);
+    if (st.media && st.media.active) applyMedia(st.media, true);
   }
 
   function applySettings(v) {
@@ -637,6 +691,7 @@
     if (st.settings.dwell_ms) DWELL.busy = st.settings.dwell_ms;
     $('sysRow').hidden = st.settings.sysload === false;
     if (st.device) $('devChip').hidden = st.settings.devices === false;
+    applyLocale();
     render();
     document.body.classList.toggle('no-motion', reduceMotion);
   }
@@ -660,13 +715,13 @@
     chipPct.hidden = !has;
     if (has) chipPct.textContent = d.battery + '%';
     chip.classList.toggle('low', has && d.battery <= 20);
-    chip.title = has ? `${d.name} · ${d.battery}% (параметры звука)` : `${d.name} (параметры звука)`;
+    chip.title = has ? T('dev_tip_bat', { name: d.name, bat: d.battery }) : T('dev_tip', { name: d.name });
 
     if (initial || d.silent) { render(); return; }
     $('devIco').innerHTML = ico;
     $('devName').textContent = d.name;
     const plural = d.kind === 'headphones' || d.kind === 'speakers';
-    $('devSub').textContent = plural ? 'Подключены' : 'Подключено';
+    $('devSub').textContent = plural ? T('connected_pl') : T('connected_sg');
     const box = $('devBatt');
     box.hidden = !has;
     if (has) {
@@ -678,6 +733,70 @@
       requestAnimationFrame(() => requestAnimationFrame(() => { ring.style.strokeDashoffset = (50.27 * (1 - d.battery / 100)).toFixed(2); }));
     }
     if (!st.hover && !st.pinned) setHud('device', 3400);
+  }
+
+  async function openAudioPanel() {
+    st.subview = 'audio';
+    const list = await invoke('get_audio_devices').catch(() => []);
+    const box = $('audioList');
+    box.innerHTML = '';
+    for (const dev of list) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'adev' + (dev.active ? ' active' : '');
+      btn.dataset.a = 'set-audio-dev';
+      btn.dataset.id = dev.id;
+      btn.innerHTML = `${DEV_ICON[dev.kind] || DEV_ICON.speakers}<span class="adev-name"></span>${dev.active ? '<span class="adev-chk">✓</span>' : ''}`;
+      btn.querySelector('.adev-name').textContent = dev.name;
+      box.appendChild(btn);
+    }
+    render();
+  }
+
+  // ---------- полка файлов (drag & drop) ----------
+  function applyShelf(items) {
+    st.shelf = Array.isArray(items) ? items : [];
+    const btn = $('shelfBtn');
+    btn.hidden = st.shelf.length === 0;
+    $('shelfCount').textContent = String(st.shelf.length);
+    $('shelfClearBtn').hidden = st.shelf.length === 0;
+    const grid = $('shelfGrid');
+    grid.innerHTML = '';
+    for (const item of st.shelf) {
+      const chip = document.createElement('div');
+      chip.className = 'shelf-item';
+      chip.title = item.path;
+      const ico = document.createElement('span');
+      ico.textContent = item.is_dir ? '📁' : '📄';
+      const name = document.createElement('span');
+      name.className = 'shelf-name';
+      name.textContent = item.name;
+      const rm = document.createElement('button');
+      rm.type = 'button';
+      rm.className = 'shelf-x';
+      rm.dataset.a = 'shelf-remove';
+      rm.dataset.path = item.path;
+      rm.textContent = '×';
+      chip.append(ico, name, rm);
+      chip.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0 || e.target.closest('.shelf-x')) return;
+        const x0 = e.clientX, y0 = e.clientY;
+        const onMove = (ev) => {
+          if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 6) {
+            cleanup();
+            invoke('shelf_drag', { path: item.path }).catch(() => {});
+          }
+        };
+        const cleanup = () => {
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', cleanup);
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', cleanup);
+      });
+      grid.appendChild(chip);
+    }
+    render();
   }
 
   // ---------- загрузка системы и помодоро ----------
@@ -733,8 +852,8 @@
   function applyCaps(on) {
     const v = island.querySelector('.v-caps');
     v.classList.toggle('lit', !!on);
-    $('capsState').textContent = on ? 'включён' : 'выключен';
-    if (!st.hover) setHud('caps', 1400);
+    $('capsState').textContent = on ? T('caps_on') : T('caps_off');
+    if (!st.hover && !st.pinned) setHud('caps', 1400);
   }
 
   // ---------- события от Rust ----------
@@ -747,12 +866,12 @@
       hoverTimer = setTimeout(() => { st.pending = false; st.hover = true; render(); }, st.topbusy ? DWELL.busy : DWELL.normal);
     } else {
       if (st.pending) { st.pending = false; render(); }
-      if (st.hover || st.pinned) hoverTimer = setTimeout(() => { st.hover = false; st.pinned = false; render(); }, 220);
+      if (st.hover || st.pinned) hoverTimer = setTimeout(() => { st.hover = false; st.pinned = false; st.subview = null; render(); }, 220);
     }
   }
   function onHotkey(kind) {
     if (kind === 'toggle') {
-      if (st.hover || st.pinned) { st.hover = false; st.pinned = false; }
+      if (st.hover || st.pinned) { st.hover = false; st.pinned = false; st.subview = null; }
       else { st.pinned = true; }
       render();
     } else if (kind === 'timer') {
@@ -762,6 +881,8 @@
   }
   listen('hover', (e) => onHover(!!e.payload));
   listen('hotkey', (e) => onHotkey(e.payload));
+  listen('drag-hover', (e) => { st.dragHover = !!e.payload; if (st.dragHover) st.subview = 'shelf'; render(); });
+  listen('shelf', (e) => applyShelf(e.payload));
   listen('topbusy', (e) => { st.topbusy = !!e.payload; render(); });
   listen('fullscreen', (e) => { st.full = !!e.payload; render(); });
   listen('media', (e) => applyMedia(e.payload, false));
@@ -824,6 +945,7 @@
     if (s.volume) applyVolume(s.volume);
     if (s.privacy) applyPrivacy(s.privacy);
     if (s.device) applyDevice(s.device, true);
+    if (s.shelf) applyShelf(s.shelf);
     if (s.sys) applySys(s.sys);
     if (s.stats) st.pomodoros = s.stats.pomodoros || 0;
     if (s.art !== undefined) setArt(s.art || null);

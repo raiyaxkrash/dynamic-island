@@ -1,6 +1,6 @@
 [package]
 name = "dynamic-island"
-version = "0.1.0"
+version = "0.2.0"
 description = "Dynamic Island для Windows"
 edition = "2021"
 publish = false
@@ -28,8 +28,12 @@ windows = { version = "0.62", features = [
   "Win32_Devices_Properties",
   "Win32_Graphics_Gdi",
   "Win32_Graphics_Imaging",
+  "Win32_Networking_WinHttp",
+  "Win32_System_Ole",
   "Win32_System_SystemInformation",
+  "Win32_System_SystemServices",
   "Win32_System_LibraryLoader",
+  "Win32_UI_Shell_Common",
   "Win32_UI_Shell_PropertiesSystem",
   "Win32_Media_Audio",
   "Win32_Media_Audio_Endpoints",

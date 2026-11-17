@@ -7,18 +7,20 @@
 use std::sync::{mpsc, OnceLock};
 use std::time::Duration;
 
+use serde::Serialize;
 use serde_json::json;
 use tauri::{AppHandle, Manager};
-use windows::core::{implement, PCWSTR, PWSTR};
+use windows::core::{implement, interface, GUID, HRESULT, HSTRING, IUnknown, IUnknown_Vtbl, PCWSTR, PWSTR};
 use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Foundation::PROPERTYKEY;
 use windows::Win32::Media::Audio::Endpoints::{
     IAudioEndpointVolume, IAudioEndpointVolumeCallback, IAudioEndpointVolumeCallback_Impl,
 };
 use windows::Win32::Media::Audio::{
-    eConsole, eRender, EDataFlow, ERole, IMMDevice, IMMDeviceEnumerator, IMMNotificationClient,
-    IMMNotificationClient_Impl, MMDeviceEnumerator, PKEY_AudioEndpoint_FormFactor,
-    AUDIO_VOLUME_NOTIFICATION_DATA, DEVICE_STATE,
+    eCommunications, eConsole, eMultimedia, eRender, EDataFlow, ERole, IMMDevice,
+    IMMDeviceEnumerator, IMMNotificationClient, IMMNotificationClient_Impl, MMDeviceEnumerator,
+    PKEY_AudioEndpoint_FormFactor, AUDIO_VOLUME_NOTIFICATION_DATA, DEVICE_STATE,
+    DEVICE_STATE_ACTIVE,
 };
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ,
@@ -287,6 +289,75 @@ pub fn step(delta: f32) {
         tx
     });
     let _ = tx.send(delta);
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct AudioDeviceInfo {
+    pub id: String,
+    pub name: String,
+    pub kind: &'static str,
+    pub active: bool,
+}
+
+#[interface("f8679f50-850a-41cf-9c72-430f290290c8")]
+unsafe trait IPolicyConfig: IUnknown {
+    unsafe fn _pad3(&self) -> HRESULT;
+    unsafe fn _pad4(&self) -> HRESULT;
+    unsafe fn _pad5(&self) -> HRESULT;
+    unsafe fn _pad6(&self) -> HRESULT;
+    unsafe fn _pad7(&self) -> HRESULT;
+    unsafe fn _pad8(&self) -> HRESULT;
+    unsafe fn _pad9(&self) -> HRESULT;
+    unsafe fn _pad10(&self) -> HRESULT;
+    unsafe fn _pad11(&self) -> HRESULT;
+    unsafe fn _pad12(&self) -> HRESULT;
+    unsafe fn set_default_endpoint(&self, device_id: PCWSTR, role: ERole) -> HRESULT;
+}
+
+const CLSID_POLICY_CONFIG: GUID = GUID::from_u128(0x870af99c_171d_4f9e_af0d_e63df40c2bc9);
+
+/// Возвращает список активных устройств вывода звука.
+pub fn list_devices() -> Vec<AudioDeviceInfo> {
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let Ok(en) = enumerator() else { return Vec::new() };
+        let def_id = default_device(&en).ok().and_then(|d| device_id(&d));
+        let Ok(col) = en.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE) else {
+            return Vec::new();
+        };
+        let count = col.GetCount().unwrap_or(0);
+        let mut out = Vec::new();
+        for i in 0..count {
+            let Ok(dev) = col.Item(i) else { continue };
+            let Some(id) = device_id(&dev) else { continue };
+            let Some((full_name, kind)) = describe(&dev) else { continue };
+            out.push(AudioDeviceInfo {
+                active: def_id.as_deref() == Some(id.as_str()),
+                id,
+                name: short_name(&full_name),
+                kind,
+            });
+        }
+        out
+    }
+}
+
+/// Переключает устройство вывода звука по умолчанию на `id`.
+pub fn set_default_device(id: &str) -> bool {
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let Ok(pc): windows::core::Result<IPolicyConfig> =
+            CoCreateInstance(&CLSID_POLICY_CONFIG, None, CLSCTX_ALL)
+        else {
+            return false;
+        };
+        let wide = HSTRING::from(id);
+        let ptr = PCWSTR(wide.as_ptr());
+        let ok1 = pc.set_default_endpoint(ptr, eConsole).is_ok();
+        let _ = pc.set_default_endpoint(ptr, eMultimedia);
+        let _ = pc.set_default_endpoint(ptr, eCommunications);
+        ok1
+    }
 }
 
 #[cfg(test)]

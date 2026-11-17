@@ -133,7 +133,10 @@ pub fn spawn(app: AppHandle) {
             let has_cursor = unsafe { GetCursorPos(&mut p) }.is_ok();
             let shared = app.state::<Shared>();
             let interactive = shared.interactive.load(Ordering::Relaxed);
-            let follow_cursor = crate::lock(&shared.settings).monitor_mode == "cursor";
+            let (follow_cursor, align) = {
+                let s = crate::lock(&shared.settings);
+                (s.monitor_mode == "cursor", s.align.clone())
+            };
 
             if geom.is_none() || tick % 80 == 0 || (follow_cursor && tick % 12 == 0 && !inside && !interactive && has_cursor) {
                 let target_mon = if follow_cursor && has_cursor {
@@ -145,7 +148,7 @@ pub fn spawn(app: AppHandle) {
                     let now = mon_key(&m);
                     if screen != Some(now) {
                         let had_screen = screen.is_some();
-                        crate::place_on(&win, &m);
+                        crate::place_on(&win, &m, &align);
                         if had_screen {
                             let _ = app.emit("screen", ());
                         }

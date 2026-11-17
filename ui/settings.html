@@ -46,6 +46,7 @@
     section:nth-of-type(2) { animation-delay: 0.05s; }
     section:nth-of-type(3) { animation-delay: 0.1s; }
     section:nth-of-type(4) { animation-delay: 0.15s; }
+    section:nth-of-type(5) { animation-delay: 0.2s; }
     @keyframes rise { to { opacity: 1; transform: none; } }
     h2 { margin: 0 0 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
     .card { background: var(--card); border-radius: 14px; overflow: hidden; }
@@ -85,6 +86,23 @@
     .seg button { position: relative; height: 30px; border: none; background: transparent; font-size: 12.5px; color: var(--dim); cursor: pointer; transition: color 0.25s ease; }
     .seg button[aria-pressed="true"] { color: var(--fg); font-weight: 600; }
 
+    /* кнопка записи горячих клавиш и обновления */
+    .kbtn, .actbtn {
+      flex: none;
+      height: 28px;
+      padding: 0 11px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.07);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s ease, border-color 0.2s ease;
+    }
+    .kbtn:hover, .actbtn:hover { background: rgba(255, 255, 255, 0.14); }
+    .kbtn.rec { border-color: var(--on); color: var(--on); background: rgba(10, 132, 255, 0.14); }
+    .actbtn.accent { border-color: transparent; background: var(--on); color: #fff; }
+
     footer { flex: none; padding: 12px 20px 16px; font-size: 11.5px; color: var(--dim); display: flex; justify-content: space-between; border-top: 1px solid var(--line); }
   </style>
 </head>
@@ -99,113 +117,179 @@
 
   <main>
     <section>
-      <h2>Основное</h2>
+      <h2 data-i18n="s_general">Основное</h2>
       <div class="card">
         <label class="row" for="autostart">
-          <div class="txt"><div class="t">Запускать вместе с Windows</div><div class="d">Остров появится сразу после входа в систему</div></div>
+          <div class="txt"><div class="t" data-i18n="s_autostart">Запускать вместе с Windows</div><div class="d" data-i18n="s_autostart_d">Остров появится сразу после входа в систему</div></div>
           <span class="sw"><input type="checkbox" id="autostart" data-key="autostart"><span></span></span>
         </label>
         <label class="row" for="animations">
-          <div class="txt"><div class="t">Анимации</div><div class="d">Плавное раскрытие и смена экранов. Работают, даже если анимации Windows выключены</div></div>
+          <div class="txt"><div class="t" data-i18n="s_animations">Анимации</div><div class="d" data-i18n="s_animations_d">Плавное раскрытие и смена экранов. Работают, даже если анимации Windows выключены</div></div>
           <span class="sw"><input type="checkbox" id="animations" data-key="animations"><span></span></span>
         </label>
         <div class="row" style="border-bottom:none">
-          <div class="txt"><div class="t">Экран</div><div class="d">На каком мониторе показывать остров</div></div>
+          <div class="txt"><div class="t" data-i18n="s_lang">Язык интерфейса</div></div>
         </div>
-        <div class="seg two" data-seg="monitor_mode" data-default="primary" role="group" aria-label="Экран">
+        <div class="seg" data-seg="lang" data-default="auto" role="group">
           <span class="pill"></span>
-          <button type="button" data-v="primary">Основной</button>
-          <button type="button" data-v="cursor">За курсором</button>
+          <button type="button" data-v="auto" data-i18n="s_lang_auto">Авто</button>
+          <button type="button" data-v="ru">Русский</button>
+          <button type="button" data-v="en">English</button>
+        </div>
+        <div class="row" style="border-bottom:none">
+          <div class="txt"><div class="t" data-i18n="s_monitor">Экран</div><div class="d" data-i18n="s_monitor_d">На каком мониторе показывать остров</div></div>
+        </div>
+        <div class="seg two" data-seg="monitor_mode" data-default="primary" role="group">
+          <span class="pill"></span>
+          <button type="button" data-v="primary" data-i18n="s_mon_primary">Основной</button>
+          <button type="button" data-v="cursor" data-i18n="s_mon_cursor">За курсором</button>
+        </div>
+        <div class="row" style="border-bottom:none">
+          <div class="txt"><div class="t" data-i18n="s_align">Положение по горизонтали</div></div>
+        </div>
+        <div class="seg" data-seg="align" data-default="center" role="group">
+          <span class="pill"></span>
+          <button type="button" data-v="left" data-i18n="s_align_left">Слева</button>
+          <button type="button" data-v="center" data-i18n="s_align_center">По центру</button>
+          <button type="button" data-v="right" data-i18n="s_align_right">Справа</button>
+        </div>
+        <div class="row" style="border-bottom:none">
+          <div class="txt"><div class="t" data-i18n="s_top_margin">Отступ от верха экрана</div></div>
+        </div>
+        <div class="seg" data-seg="top_margin" data-type="num" data-default="6" role="group">
+          <span class="pill"></span>
+          <button type="button" data-v="0">0 px</button>
+          <button type="button" data-v="6">6 px</button>
+          <button type="button" data-v="14">14 px</button>
         </div>
         <label class="row" for="wheel_collapsed">
-          <div class="txt"><div class="t">Колёсико по свёрнутому острову</div><div class="d">Менять громкость прокруткой, когда под островом нет окна</div></div>
+          <div class="txt"><div class="t" data-i18n="s_wheel">Колёсико по свёрнутому острову</div><div class="d" data-i18n="s_wheel_d">Менять громкость прокруткой, когда под островом нет окна</div></div>
           <span class="sw"><input type="checkbox" id="wheel_collapsed" data-key="wheel_collapsed"><span></span></span>
         </label>
         <label class="row" for="hotkeys">
-          <div class="txt"><div class="t">Горячие клавиши</div><div class="d">Ctrl + Alt + I — открыть остров · Ctrl + Alt + T — помодоро / пауза</div></div>
+          <div class="txt"><div class="t" data-i18n="s_hotkeys">Горячие клавиши</div><div class="d" data-i18n="s_hotkeys_d">Глобальные сочетания для быстрого доступа</div></div>
           <span class="sw"><input type="checkbox" id="hotkeys" data-key="hotkeys"><span></span></span>
         </label>
+        <div class="row">
+          <div class="txt"><div class="t" data-i18n="s_hk_toggle">Открыть / свернуть остров</div></div>
+          <button type="button" class="kbtn" data-hk="hotkey_toggle">Ctrl+Alt+I</button>
+        </div>
+        <div class="row">
+          <div class="txt"><div class="t" data-i18n="s_hk_timer">Старт помодоро / пауза</div></div>
+          <button type="button" class="kbtn" data-hk="hotkey_timer">Ctrl+Alt+T</button>
+        </div>
       </div>
     </section>
 
     <section>
-      <h2>Что показывать</h2>
+      <h2 data-i18n="s_show">Что показывать</h2>
       <div class="card">
         <label class="row" for="devices">
-          <div class="txt"><div class="t">Наушники и колонки</div><div class="d">Название и заряд при подключении</div></div>
+          <div class="txt"><div class="t" data-i18n="s_devices">Наушники и колонки</div><div class="d" data-i18n="s_devices_d">Название и заряд при подключении</div></div>
           <span class="sw"><input type="checkbox" id="devices" data-key="devices"><span></span></span>
         </label>
         <label class="row" for="clipboard">
-          <div class="txt"><div class="t">Скопированное</div><div class="d">Короткая подсказка с началом текста. Пароли из менеджеров не показываются</div></div>
+          <div class="txt"><div class="t" data-i18n="s_clipboard">Скопированное</div><div class="d" data-i18n="s_clipboard_d">Короткая подсказка с началом текста. Пароли из менеджеров не показываются</div></div>
           <span class="sw"><input type="checkbox" id="clipboard" data-key="clipboard"><span></span></span>
         </label>
         <label class="row" for="privacy">
-          <div class="txt"><div class="t">Микрофон и камера</div><div class="d">Точка рядом с островом, когда их кто-то использует</div></div>
+          <div class="txt"><div class="t" data-i18n="s_privacy">Микрофон и камера</div><div class="d" data-i18n="s_privacy_d">Точка рядом с островом, когда их кто-то использует</div></div>
           <span class="sw"><input type="checkbox" id="privacy" data-key="privacy"><span></span></span>
         </label>
         <label class="row" for="keyboard">
-          <div class="txt"><div class="t">Раскладка и Caps Lock</div><div class="d">Коротко показывает «РУ» или «EN», когда вы переключаете язык</div></div>
+          <div class="txt"><div class="t" data-i18n="s_keyboard">Раскладка и Caps Lock</div><div class="d" data-i18n="s_keyboard_d">Коротко показывает «РУ» или «EN», когда вы переключаете язык</div></div>
           <span class="sw"><input type="checkbox" id="keyboard" data-key="keyboard"><span></span></span>
         </label>
         <label class="row" for="hide_paused">
-          <div class="txt"><div class="t">Сворачивать долгую паузу</div><div class="d">Если музыка стоит на паузе больше трёх минут, остров прячет обложку</div></div>
+          <div class="txt"><div class="t" data-i18n="s_hide_paused">Сворачивать долгую паузу</div><div class="d" data-i18n="s_hide_paused_d">Если музыка стоит на паузе больше трёх минут, остров прячет обложку</div></div>
           <span class="sw"><input type="checkbox" id="hide_paused" data-key="hide_paused"><span></span></span>
         </label>
         <label class="row" for="sysload">
-          <div class="txt"><div class="t">Загрузка системы</div><div class="d">Процессор и память при наведении</div></div>
+          <div class="txt"><div class="t" data-i18n="s_sysload">Загрузка системы</div><div class="d" data-i18n="s_sysload_d">Процессор и память при наведении</div></div>
           <span class="sw"><input type="checkbox" id="sysload" data-key="sysload"><span></span></span>
         </label>
       </div>
     </section>
 
     <section>
-      <h2>Таймер</h2>
+      <h2 data-i18n="s_timer">Таймер</h2>
       <div class="card">
         <label class="row" for="sounds">
-          <div class="txt"><div class="t">Звук в конце</div><div class="d">Короткий сигнал, когда таймер или помодоро закончились</div></div>
+          <div class="txt"><div class="t" data-i18n="s_sounds">Звук в конце</div><div class="d" data-i18n="s_sounds_d">Короткий сигнал, когда таймер или помодоро закончились</div></div>
           <span class="sw"><input type="checkbox" id="sounds" data-key="sounds"><span></span></span>
         </label>
         <div class="row" style="border-bottom:none">
-          <div class="txt"><div class="t">Громкость сигнала</div></div>
+          <div class="txt"><div class="t" data-i18n="s_sound_vol">Громкость сигнала</div></div>
         </div>
-        <div class="seg" data-seg="sound_volume" data-type="num" data-default="70" role="group" aria-label="Громкость сигнала">
+        <div class="seg" data-seg="sound_volume" data-type="num" data-default="70" role="group">
           <span class="pill"></span>
-          <button type="button" data-v="25">Тихо</button>
-          <button type="button" data-v="70">Обычно</button>
-          <button type="button" data-v="100">Громко</button>
+          <button type="button" data-v="25" data-i18n="s_vol_low">Тихо</button>
+          <button type="button" data-v="70" data-i18n="s_vol_mid">Обычно</button>
+          <button type="button" data-v="100" data-i18n="s_vol_high">Громко</button>
         </div>
         <div class="row">
-          <div class="txt"><div class="t">Статистика помодоро</div><div class="d" id="pomoStats">Сегодня: 0 · За 7 дней: 0 · Серия: 0 дн.</div></div>
+          <div class="txt"><div class="t" data-i18n="s_pomo_stats">Статистика помодоро</div><div class="d" id="pomoStats">Сегодня: 0 · За 7 дней: 0 · Серия: 0 дн.</div></div>
         </div>
       </div>
     </section>
 
     <section>
-      <h2>Над вкладками</h2>
+      <h2 data-i18n="s_tabs">Над вкладками</h2>
       <div class="card">
         <div class="row" style="border:none">
-          <div class="txt"><div class="t">Задержка раскрытия</div><div class="d">Сколько держать курсор на полоске над развёрнутым окном, чтобы остров раскрылся</div></div>
+          <div class="txt"><div class="t" data-i18n="s_dwell">Задержка раскрытия</div><div class="d" data-i18n="s_dwell_d">Сколько держать курсор на полоске над развёрнутым окном, чтобы остров раскрылся</div></div>
         </div>
-        <div class="seg" data-seg="dwell_ms" data-type="num" data-default="450" role="group" aria-label="Задержка раскрытия">
+        <div class="seg" data-seg="dwell_ms" data-type="num" data-default="450" role="group">
           <span class="pill"></span>
-          <button type="button" data-v="250">Быстро</button>
-          <button type="button" data-v="450">Обычно</button>
-          <button type="button" data-v="750">Медленно</button>
+          <button type="button" data-v="250" data-i18n="s_fast">Быстро</button>
+          <button type="button" data-v="450" data-i18n="s_normal">Обычно</button>
+          <button type="button" data-v="750" data-i18n="s_slow">Медленно</button>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2 data-i18n="s_updates">Обновления</h2>
+      <div class="card">
+        <div class="row">
+          <div class="txt"><div class="t" data-i18n="s_upd_title">Версия на GitHub</div><div class="d" id="updStatus"></div></div>
+          <button type="button" class="actbtn" id="updBtn" data-i18n="s_upd_btn">Проверить</button>
         </div>
       </div>
     </section>
   </main>
 
-  <footer><span>Значок острова — в трее</span><span id="ver"></span></footer>
+  <footer><span data-i18n="s_footer">Значок острова — в трее</span><span id="ver"></span></footer>
 
+  <script src="i18n.js"></script>
   <script>
     (() => {
       const { invoke } = window.__TAURI__.core;
       const win = window.__TAURI__.window.getCurrentWindow();
+      const I18N = window.DI_I18N;
       const inputs = [...document.querySelectorAll('input[data-key]')];
       const segs = [...document.querySelectorAll('[data-seg]')];
+      const hkBtns = [...document.querySelectorAll('[data-hk]')];
+      const updBtn = document.getElementById('updBtn');
+      const updStatus = document.getElementById('updStatus');
+      let cur = {};
+      let recording = null;
+      let releaseUrl = '';
+
+      function lang() { return I18N.resolveLang(cur.lang); }
+      function T(k, v) { return I18N.t(lang(), k, v); }
+
+      function applyLocale() {
+        const l = lang();
+        document.documentElement.lang = l;
+        document.title = T('s_title');
+        document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = T(el.dataset.i18n); });
+        document.getElementById('close').ariaLabel = T('close');
+      }
 
       function fill(s) {
+        cur = s || {};
+        applyLocale();
         for (const el of inputs) el.checked = !!s[el.dataset.key];
         for (const seg of segs) {
           const key = seg.dataset.seg;
@@ -218,9 +302,15 @@
           buttons.forEach((b, i) => b.setAttribute('aria-pressed', String(i === idx)));
           seg.querySelector('.pill').style.transform = `translateX(${idx * 100}%)`;
         }
-        document.getElementById('ver').textContent = 'версия ' + (s.version || '');
-        document.getElementById('pomoStats').textContent =
-          `Сегодня: ${s.pomodoros_today || 0} · За 7 дней: ${s.pomodoros_week || 0} · Серия: ${s.pomodoros_streak || 0} дн.`;
+        for (const b of hkBtns) {
+          if (recording !== b) b.textContent = s[b.dataset.hk] || '';
+        }
+        document.getElementById('ver').textContent = T('s_ver', { v: s.version || '' });
+        document.getElementById('pomoStats').textContent = T('s_pomo_fmt', {
+          t: s.pomodoros_today || 0,
+          w: s.pomodoros_week || 0,
+          s: s.pomodoros_streak || 0,
+        });
       }
 
       async function set(key, value) {
@@ -235,8 +325,77 @@
           b.addEventListener('click', () => set(key, isNum ? +b.dataset.v : b.dataset.v))
         );
       }
+
+      function keyLabel(e) {
+        if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return null;
+        const mods = [];
+        if (e.ctrlKey) mods.push('Ctrl');
+        if (e.altKey) mods.push('Alt');
+        if (e.shiftKey) mods.push('Shift');
+        if (!mods.length) return null;
+        let k = e.code;
+        if (k.startsWith('Key')) k = k.slice(3);
+        else if (k.startsWith('Digit')) k = k.slice(5);
+        else if (e.key === ' ') k = 'Space';
+        else if (/^F([1-9]|1[0-2])$/i.test(e.key)) k = e.key.toUpperCase();
+        else return null;
+        return [...mods, k].join('+');
+      }
+
+      for (const b of hkBtns) {
+        b.addEventListener('click', () => {
+          if (recording) recording.classList.remove('rec');
+          recording = b;
+          b.classList.add('rec');
+          b.textContent = T('s_hk_press');
+        });
+      }
+
+      updBtn.addEventListener('click', async () => {
+        if (releaseUrl) {
+          invoke('open_release_url', { url: releaseUrl }).catch(() => {});
+          return;
+        }
+        updBtn.disabled = true;
+        updStatus.textContent = T('s_upd_checking');
+        try {
+          const info = await invoke('check_update');
+          if (info && info.available) {
+            releaseUrl = info.url;
+            updStatus.textContent = T('s_upd_avail', { v: info.version });
+            updBtn.textContent = T('s_upd_avail', { v: info.version });
+            updBtn.classList.add('accent');
+          } else {
+            updStatus.textContent = T('s_upd_latest');
+          }
+        } catch {
+          updStatus.textContent = '';
+        } finally {
+          updBtn.disabled = false;
+        }
+      });
+
       document.getElementById('close').addEventListener('click', () => win.close());
-      window.addEventListener('keydown', (e) => { if (e.key === 'Escape') win.close(); });
+      window.addEventListener('keydown', (e) => {
+        if (recording) {
+          e.preventDefault();
+          if (e.key === 'Escape') {
+            recording.classList.remove('rec');
+            recording.textContent = cur[recording.dataset.hk] || '';
+            recording = null;
+            return;
+          }
+          const combo = keyLabel(e);
+          if (combo) {
+            const btn = recording;
+            recording = null;
+            btn.classList.remove('rec');
+            set(btn.dataset.hk, combo);
+          }
+          return;
+        }
+        if (e.key === 'Escape') win.close();
+      });
 
       invoke('get_settings').then(fill).catch(() => {});
     })();

@@ -28,10 +28,13 @@ mod media;
 mod power;
 mod privacy;
 mod settings;
+mod shelf;
 mod sysinfo;
+mod updater;
 mod winmsg;
 
 use settings::{Settings, Stats};
+use shelf::ShelfItem;
 
 /// Общее состояние: зона острова (в CSS-пикселях окна), настройки и последние снимки данных.
 #[derive(Default)]
@@ -41,6 +44,7 @@ pub struct Shared {
     pub interactive: AtomicBool,
     pub settings: Mutex<Settings>,
     pub stats: Mutex<Stats>,
+    pub shelf: Mutex<Vec<ShelfItem>>,
     pub snap: Mutex<Map<String, Value>>,
 }
 
@@ -132,6 +136,60 @@ fn open_sound_settings() {
 }
 
 #[tauri::command]
+fn get_audio_devices() -> Value {
+    json!(audio::list_devices())
+}
+
+#[tauri::command]
+fn set_audio_device(id: String) -> bool {
+    audio::set_default_device(&id)
+}
+
+#[tauri::command]
+fn check_update(app: AppHandle) -> Value {
+    let info = updater::check(env!("CARGO_PKG_VERSION"));
+    if info.available {
+        publish(&app, "update", json!(info));
+    }
+    json!(info)
+}
+
+#[tauri::command]
+fn open_release_url(url: String) {
+    if updater::allowed_release_url(&url) {
+        unsafe {
+            let wide = HSTRING::from(url.as_str());
+            let _ = ShellExecuteW(None, w!("open"), PCWSTR(wide.as_ptr()), None, None, SW_SHOWNORMAL);
+        }
+    }
+}
+
+fn publish_shelf(app: &AppHandle) {
+    let items = lock(&app.state::<Shared>().shelf).clone();
+    publish(app, "shelf", json!(items));
+}
+
+#[tauri::command]
+fn shelf_remove(app: AppHandle, path: String) {
+    {
+        let shared = app.state::<Shared>();
+        lock(&shared.shelf).retain(|item| item.path != path);
+    }
+    publish_shelf(&app);
+}
+
+#[tauri::command]
+fn shelf_clear(app: AppHandle) {
+    lock(&app.state::<Shared>().shelf).clear();
+    publish_shelf(&app);
+}
+
+#[tauri::command]
+fn shelf_drag(path: String) {
+    shelf::start_drag(path);
+}
+
+#[tauri::command]
 fn volume_step(delta: f32) {
     audio::step(delta);
 }
@@ -184,21 +242,33 @@ fn set_setting(app: AppHandle, key: String, value: Value) -> Value {
             obj[key.as_str()] = value;
             if let Ok(mut updated) = serde_json::from_value::<Settings>(obj) {
                 updated.sound_volume = updated.sound_volume.min(100);
+                updated.top_margin = updated.top_margin.clamp(0, 24);
                 if updated.monitor_mode != "cursor" {
                     updated.monitor_mode = "primary".to_string();
+                }
+                if !matches!(updated.lang.as_str(), "auto" | "ru" | "en") {
+                    updated.lang = "auto".to_string();
+                }
+                if !matches!(updated.align.as_str(), "left" | "center" | "right") {
+                    updated.align = "center".to_string();
                 }
                 *s = updated;
             }
             s.clone()
         };
         settings::save(&app, &snapshot);
-        if key == "monitor_mode" && snapshot.monitor_mode == "primary" {
+        if matches!(key.as_str(), "monitor_mode" | "align") {
             if let Some(w) = app.get_webview_window("island") {
-                place(&w);
+                if snapshot.monitor_mode == "primary" {
+                    place(&w);
+                } else if let Ok(Some(m)) = w.current_monitor().or_else(|_| w.primary_monitor()) {
+                    place_on(&w, &m, &snapshot.align);
+                }
+                let _ = app.emit("screen", ());
             }
         }
-        if key == "hotkeys" {
-            hotkeys::set_enabled(snapshot.hotkeys);
+        if matches!(key.as_str(), "hotkeys" | "hotkey_toggle" | "hotkey_timer") {
+            hotkeys::sync();
         }
         publish_settings(&app);
     }
@@ -228,19 +298,28 @@ fn show_settings(app: &AppHandle) {
         .build();
 }
 
-/// Ставит окно по центру верхнего края указанного монитора (учитывая панель задач, если она сверху).
-pub(crate) fn place_on(win: &WebviewWindow, mon: &Monitor) {
+/// Ставит окно у верхнего края указанного монитора с учётом выравнивания (`left`/`center`/`right`) и верхней панели задач.
+pub(crate) fn place_on(win: &WebviewWindow, mon: &Monitor, align: &str) {
     let Ok(size) = win.outer_size() else { return };
-    let x = mon.position().x + (mon.size().width as i32 - size.width as i32) / 2;
+    let mx = mon.position().x;
+    let mw = mon.size().width as i32;
+    let sw = size.width as i32;
+    let pad = (12.0 * mon.scale_factor()).round() as i32;
+    let x = match align {
+        "left" => mx + pad,
+        "right" => mx + mw - sw - pad,
+        _ => mx + (mw - sw) / 2,
+    };
     let wa_top = mon.work_area().position.y;
     let y = if wa_top > mon.position().y { wa_top } else { mon.position().y };
     let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
 }
 
-/// Ставит окно по центру верхнего края основного монитора.
+/// Ставит окно у верхнего края основного монитора согласно настройке `align`.
 pub(crate) fn place(win: &WebviewWindow) {
     let Ok(Some(mon)) = win.primary_monitor() else { return };
-    place_on(win, &mon);
+    let align = lock(&win.app_handle().state::<Shared>().settings).align.clone();
+    place_on(win, &mon, &align);
 }
 
 fn build_tray(app: &tauri::App) -> tauri::Result<()> {
@@ -311,17 +390,49 @@ pub fn run() {
             set_setting,
             open_settings,
             open_privacy_settings,
-            open_sound_settings
+            open_sound_settings,
+            get_audio_devices,
+            set_audio_device,
+            check_update,
+            open_release_url,
+            shelf_remove,
+            shelf_clear,
+            shelf_drag
         ])
         .on_window_event(|win, event| {
             if win.label() == "island" {
-                if let tauri::WindowEvent::ScaleFactorChanged { .. } = event {
-                    if let Some(w) = win.app_handle().get_webview_window("island") {
-                        if let Ok(Some(mon)) = w.current_monitor().or_else(|_| w.primary_monitor()) {
-                            place_on(&w, &mon);
+                match event {
+                    tauri::WindowEvent::ScaleFactorChanged { .. } => {
+                        if let Some(w) = win.app_handle().get_webview_window("island") {
+                            let align = lock(&win.app_handle().state::<Shared>().settings).align.clone();
+                            if let Ok(Some(mon)) = w.current_monitor().or_else(|_| w.primary_monitor()) {
+                                place_on(&w, &mon, &align);
+                            }
+                            let _ = win.app_handle().emit("screen", ());
                         }
-                        let _ = win.app_handle().emit("screen", ());
                     }
+                    tauri::WindowEvent::DragDrop(dd) => match dd {
+                        tauri::DragDropEvent::Enter { .. } => {
+                            let _ = win.app_handle().emit("drag-hover", true);
+                        }
+                        tauri::DragDropEvent::Leave => {
+                            let _ = win.app_handle().emit("drag-hover", false);
+                        }
+                        tauri::DragDropEvent::Drop { paths, .. } => {
+                            let app = win.app_handle();
+                            let changed = {
+                                let shared = app.state::<Shared>();
+                                let mut sh = lock(&shared.shelf);
+                                shelf::add_paths(&mut sh, paths.clone())
+                            };
+                            let _ = app.emit("drag-hover", false);
+                            if changed {
+                                publish_shelf(app);
+                            }
+                        }
+                        _ => {}
+                    },
+                    _ => {}
                 }
             }
         })
@@ -349,7 +460,16 @@ pub fn run() {
             sysinfo::spawn(handle.clone());
             keyboard::spawn(handle.clone());
             clipboard::spawn(handle.clone());
-            hotkeys::spawn(handle);
+            hotkeys::spawn(handle.clone());
+
+            // Тихая проверка новой версии на GitHub через 10 секунд после старта.
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(10));
+                let info = updater::check(env!("CARGO_PKG_VERSION"));
+                if info.available {
+                    publish(&handle, "update", json!(info));
+                }
+            });
 
             build_tray(app)?;
             Ok(())

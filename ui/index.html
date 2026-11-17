@@ -38,7 +38,11 @@
           <span class="date" data-live="date"></span>
         </div>
         <div class="h-right">
-          <button type="button" class="dev-chip" id="devChip" data-a="sound-settings" hidden><span class="dev-chip-ico" id="devChipIco"></span><span class="dev-chip-pct" id="devChipPct" hidden></span></button>
+          <button type="button" class="dev-chip shelf-chip" id="shelfBtn" data-a="open-shelf" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5M12 4v10m0 0-3.5-3.5M12 14l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span id="shelfCount">0</span>
+          </button>
+          <button type="button" class="dev-chip" id="devChip" data-a="open-audio" hidden><span class="dev-chip-ico" id="devChipIco"></span><span class="dev-chip-pct" id="devChipPct" hidden></span></button>
           <div class="batt" id="clkBatt" hidden>
             <span id="clkPct">100%</span>
             <svg class="batt-ico" viewBox="0 0 30 14" aria-hidden="true">
@@ -57,14 +61,14 @@
       </div>
       <button type="button" class="priv st" id="privLine" data-a="privacy-settings" style="--i:1" title="Открыть параметры конфиденциальности Windows" hidden></button>
       <div class="sys st" id="sysRow" style="--i:2">
-        <div class="meter"><span class="ml">ЦП</span><span class="mt"><span class="mf" id="cpuFill"></span></span><span class="mv" id="cpuVal">0%</span></div>
-        <div class="meter"><span class="ml">Память</span><span class="mt"><span class="mf" id="memFill"></span></span><span class="mv" id="memVal">0%</span></div>
+        <div class="meter"><span class="ml" data-i18n="cpu">ЦП</span><span class="mt"><span class="mf" id="cpuFill"></span></span><span class="mv" id="cpuVal">0%</span></div>
+        <div class="meter"><span class="ml" data-i18n="mem">Память</span><span class="mt"><span class="mf" id="memFill"></span></span><span class="mv" id="memVal">0%</span></div>
       </div>
       <div class="h-timer st" style="--i:3">
         <div class="presets" id="presets">
-          <button type="button" data-t="5">5 мин</button>
-          <button type="button" data-t="15">15 мин</button>
-          <button type="button" data-t="25" data-kind="work" class="pomo">Помодоро 25</button>
+          <button type="button" data-t="5" data-i18n-min="5">5 мин</button>
+          <button type="button" data-t="15" data-i18n-min="15">15 мин</button>
+          <button type="button" data-t="25" data-kind="work" class="pomo" data-i18n="pomodoro_25">Помодоро 25</button>
           <button type="button" class="tcustom-btn" id="tCustomBtn" data-a="tcustom-open" aria-label="Свой таймер" title="Свой таймер">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="7.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 9.5V13l2.4 1.6M9.5 3.5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
           </button>
@@ -73,7 +77,7 @@
           <button type="button" class="round" data-a="tcustom-dec" aria-label="Меньше">−</button>
           <span class="tcustom-val" id="tCustomVal" title="Колёсико или кнопки меняют минуты">10 мин</span>
           <button type="button" class="round" data-a="tcustom-inc" aria-label="Больше">+</button>
-          <button type="button" class="pill tcustom-go" data-a="tcustom-start">Старт</button>
+          <button type="button" class="pill tcustom-go" data-a="tcustom-start" data-i18n="start">Старт</button>
           <button type="button" class="round" data-a="tcustom-close" aria-label="Назад">
             <svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7 7 17" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
           </button>
@@ -226,8 +230,36 @@
         <svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7 7 17" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
       </button>
     </div>
+
+    <!-- выбор устройства вывода звука -->
+    <div class="view v-panel" data-view="audio">
+      <div class="p-head">
+        <button type="button" class="round sm" data-a="panel-back" aria-label="Назад">
+          <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <span class="p-title" data-i18n="audio_title">Вывод звука</span>
+        <button type="button" class="round sm" data-a="sound-settings" id="soundSettingsBtn" aria-label="Параметры звука">
+          <svg viewBox="0 0 24 24"><path d="M14 5h6v6M20 5l-9 9M10 7H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <div class="audio-list" id="audioList"></div>
+    </div>
+
+    <!-- полка файлов (drag & drop) -->
+    <div class="view v-panel" data-view="shelf">
+      <div class="p-head">
+        <button type="button" class="round sm" data-a="panel-back" aria-label="Назад">
+          <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <span class="p-title" data-i18n="shelf_title">Полка файлов</span>
+        <button type="button" class="pill sm-pill" id="shelfClearBtn" data-a="shelf-clear" data-i18n="shelf_clear">Очистить</button>
+      </div>
+      <div class="shelf-grid" id="shelfGrid"></div>
+      <div class="shelf-hint" id="shelfHint" data-i18n="shelf_hint">Бросьте файлы сюда или тяните обратно в нужное окно</div>
+    </div>
   </div>
 
+  <script src="i18n.js"></script>
   <script src="island.js"></script>
 </body>
 </html>

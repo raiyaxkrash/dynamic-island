@@ -37,8 +37,18 @@ pub struct Settings {
     pub wheel_collapsed: bool,
     /// Громкость звука таймера (0..=100).
     pub sound_volume: u8,
-    /// Глобальные горячие клавиши (`Ctrl+Alt+I` и `Ctrl+Alt+T`).
+    /// Глобальные горячие клавиши.
     pub hotkeys: bool,
+    /// Язык интерфейса: `"auto"`, `"ru"` или `"en"`.
+    pub lang: String,
+    /// Положение по горизонтали: `"left"`, `"center"` или `"right"`.
+    pub align: String,
+    /// Отступ сверху экрана в CSS-пикселях (`0..=24`).
+    pub top_margin: i32,
+    /// Сочетание клавиш для открытия/сворачивания острова.
+    pub hotkey_toggle: String,
+    /// Сочетание клавиш для запуска/паузы таймера.
+    pub hotkey_timer: String,
 }
 
 impl Default for Settings {
@@ -57,6 +67,11 @@ impl Default for Settings {
             wheel_collapsed: false,
             sound_volume: 70,
             hotkeys: true,
+            lang: "auto".to_string(),
+            align: "center".to_string(),
+            top_margin: 6,
+            hotkey_toggle: "Ctrl+Alt+I".to_string(),
+            hotkey_timer: "Ctrl+Alt+T".to_string(),
         }
     }
 }
