@@ -1,0 +1,463 @@
+:root {
+  --accent: #8fd6ff;
+  --fg: #f5f5f7;
+  --dim: rgba(245, 245, 247, 0.52);
+  --faint: rgba(255, 255, 255, 0.14);
+  --chip: rgba(255, 255, 255, 0.08);
+  --green: #32d74b;
+  --orange: #ff9f0a;
+  --red: #ff453a;
+  /* одна мягкая кривая на всё: быстро стартует, долго и спокойно доезжает */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+body {
+  font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; }
+
+/* Размер, скругление и сдвиг острова ведёт пружина в island.js.
+   Ни теней с размытием, ни фильтров: на каждом кадре перерисовывать почти нечего. */
+.island {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: 124px;
+  height: 30px;
+  border-radius: 15px;
+  transform: translateX(-50%);
+  background: #000;
+  overflow: hidden;
+  contain: layout paint style;
+  will-change: width, height, transform;
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.09);
+  transition: opacity 0.35s var(--ease);
+}
+.island[data-mode="hidden"] { opacity: 0; }
+
+/* ---------- экраны ----------
+   Каждый экран сразу своего размера и стоит по центру. Новый экран включается, когда остров
+   прошёл больше половины пути (это решает island.js), поэтому содержимое не мелькает обрезанным. */
+.view {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  transform: translateX(-50%) translateY(-3px) scale(0.97);
+  pointer-events: none;
+  will-change: opacity, transform;
+  transition: opacity 0.12s ease, transform 0.18s ease;
+}
+.view.on {
+  opacity: 1;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  transition: opacity 0.3s var(--ease), transform 0.45s var(--ease);
+}
+/* детали больших экранов проявляются по очереди, с небольшим подъёмом */
+.st { opacity: 0; transform: translateY(5px); transition: opacity 0.1s ease, transform 0.15s ease; }
+.view.on .st {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 0.35s var(--ease) calc(0.04s + var(--i) * 0.045s),
+    transform 0.5s var(--ease) calc(0.04s + var(--i) * 0.045s);
+}
+
+/* обложка: смена трека — мягкий перелив, а не мгновенная подмена */
+.art {
+  flex: none;
+  background: linear-gradient(135deg, #2c2e35, #17181c) center / cover no-repeat;
+  position: relative;
+  transition: opacity 0.22s ease, transform 0.35s var(--ease);
+}
+.art.fading { opacity: 0; transform: scale(0.94); }
+.art.empty::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: center / 46% no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 17.5V6l10-2v11.5' fill='none' stroke='%23f5f5f7' stroke-opacity='.6' stroke-width='1.8' stroke-linejoin='round'/%3E%3Ccircle cx='6.5' cy='17.5' r='2.5' fill='%23f5f5f7' fill-opacity='.6'/%3E%3Ccircle cx='16.5' cy='15.5' r='2.5' fill='%23f5f5f7' fill-opacity='.6'/%3E%3C/svg%3E");
+}
+.art-s { width: 22px; height: 22px; border-radius: 6px; }
+.art-m { width: 38px; height: 38px; border-radius: 10px; }
+.art-l { width: 60px; height: 60px; border-radius: 14px; }
+.view .art-l { transform: scale(0.92); }
+.view.on .art-l { transform: none; transition: opacity 0.22s ease, transform 0.55s var(--ease) 0.03s; }
+.view.on .art-l.fading { transform: scale(0.94); }
+
+.meta { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.artist { font-size: 12.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.src {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  pointer-events: none;
+}
+.src.multi {
+  pointer-events: auto;
+  cursor: pointer;
+  padding: 1px 6px;
+  margin-left: -6px;
+  border-radius: 6px;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.src.multi:hover { background: var(--chip); color: var(--fg); }
+
+/* Эквалайзер: внешний столбик плавно «приседает» на паузе, внутренний продолжает дышать.
+   Так пауза выглядит как мягкое затихание, а не как застывший кадр. */
+.eq { flex: none; display: flex; align-items: center; gap: 2.5px; height: 15px; }
+.eq i {
+  display: block;
+  width: 3px;
+  height: 100%;
+  transform-origin: center;
+  transition: transform 0.6s var(--ease), opacity 0.6s var(--ease);
+}
+.eq b {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transform: scaleY(0.3);
+  animation: eq 1s ease-in-out infinite alternate;
+  transition: background 0.8s ease;
+}
+.eq i:nth-child(1) b { animation-duration: 0.9s; }
+.eq i:nth-child(2) b { animation-duration: 0.66s; animation-delay: -0.3s; }
+.eq i:nth-child(3) b { animation-duration: 1.04s; animation-delay: -0.55s; }
+.eq i:nth-child(4) b { animation-duration: 0.76s; animation-delay: -0.2s; }
+.eq i:nth-child(5) b { animation-duration: 0.95s; animation-delay: -0.7s; }
+@keyframes eq { from { transform: scaleY(0.28); } to { transform: scaleY(1); } }
+.island:not(.playing) .eq i { transform: scaleY(0.3); opacity: 0.45; }
+
+/* кольцо таймера */
+.ring { flex: none; transform: rotate(-90deg); overflow: visible; }
+.ring .rbg { fill: none; stroke: var(--faint); stroke-width: 2.2; }
+.ring .rfg { fill: none; stroke: var(--orange); stroke-width: 2.2; stroke-linecap: round; stroke-dasharray: 50.27; transition: stroke-dashoffset 0.25s linear, stroke 0.4s ease; }
+.island.tpaused .ring .rfg { stroke: var(--dim); }
+.ring-xs { width: 12px; height: 12px; }
+.ring-s { width: 17px; height: 17px; }
+.ring-m { width: 28px; height: 28px; }
+.ring-l { width: 34px; height: 34px; }
+.ttext { font-size: 13px; font-weight: 600; color: var(--orange); font-variant-numeric: tabular-nums; transition: color 0.4s ease; }
+.island.tpaused .ttext { color: var(--dim); }
+
+/* полоска над вкладками */
+.v-sliver { justify-content: center; }
+.v-sliver .line { width: 40px; height: 2px; border-radius: 1px; background: rgba(255, 255, 255, 0.24); transition: width 0.5s var(--ease), background 0.5s ease, opacity 0.5s ease; }
+.island[data-mode="sliverHot"] .v-sliver .line { width: 60px; background: rgba(255, 255, 255, 0.55); }
+.island.playing .v-sliver .line { background: var(--accent); animation: breathe 2.4s ease-in-out infinite; }
+.island.has-timer:not(.playing) .v-sliver .line { background: var(--orange); }
+@keyframes breathe { 50% { opacity: 0.55; } }
+
+/* свёрнутая музыка и таймер */
+.v-mini { padding: 0 13px 0 5px; justify-content: space-between; }
+.mini-r { position: relative; display: flex; align-items: center; justify-content: flex-end; min-width: 40px; height: 100%; }
+.mini-r .eq, .mini-r .ttext { position: absolute; right: 0; transition: opacity 0.35s var(--ease), transform 0.45s var(--ease); }
+.island.has-timer .mini-r .eq, .island:not(.has-timer) .mini-r .ttext { opacity: 0; transform: scale(0.7); }
+.v-tmini { padding: 0 13px 0 9px; justify-content: space-between; }
+
+/* домашний экран: часы, батарея, таймер */
+.v-home { flex-direction: column; align-items: stretch; justify-content: space-between; padding: 15px 18px 14px; }
+.h-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.clk { min-width: 0; display: flex; align-items: baseline; gap: 9px; }
+.time { font-size: 23px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.date { font-size: 12.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.batt { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.batt[hidden] { display: none; }
+.batt-ico { width: 25px; height: 12px; }
+.batt.charging { color: var(--green); }
+.batt.low { color: var(--red); }
+.bfill { transition: width 0.6s var(--ease); }
+.priv { padding: 0; border: none; background: transparent; text-align: left; font-size: 11.5px; color: var(--orange); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.priv:hover { text-decoration: underline; }
+.priv[hidden] { display: none; }
+.h-timer { flex: none; position: relative; height: 36px; }
+.presets, .running, .tcustom {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  transition: opacity 0.3s var(--ease), transform 0.45s var(--ease);
+}
+.presets { gap: 7px; }
+.running { gap: 11px; }
+.tcustom { gap: 8px; }
+.presets.away, .running.away, .tcustom.away { opacity: 0; transform: translateY(6px); pointer-events: none; }
+.presets button {
+  flex: 1;
+  height: 32px;
+  border: none;
+  border-radius: 16px;
+  background: var(--chip);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.25s ease, transform 0.35s var(--ease);
+}
+.presets button:hover { background: rgba(255, 255, 255, 0.14); }
+.presets button:active { transform: scale(0.94); }
+.presets .pomo { flex: 1.5; color: var(--orange); background: rgba(255, 159, 10, 0.13); }
+.presets .pomo:hover { background: rgba(255, 159, 10, 0.2); }
+.presets .tcustom-btn { flex: 0 0 32px; width: 32px; padding: 0; display: grid; place-items: center; color: var(--dim); }
+.presets .tcustom-btn:hover { color: var(--fg); }
+.presets .tcustom-btn svg { width: 16px; height: 16px; }
+.tcustom-val { flex: 1; text-align: center; font-size: 13.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tcustom-go { height: 30px; padding: 0 13px; }
+.tinfo { flex: 1; display: flex; flex-direction: column; line-height: 1.15; }
+.tbig { font-size: 18px; font-weight: 600; color: var(--orange); font-variant-numeric: tabular-nums; transition: color 0.4s ease; }
+.tlbl { font-size: 11px; color: var(--dim); }
+.island.tpaused .tbig { color: var(--dim); }
+
+/* круглые кнопки и иконки, которые плавно сменяют друг друга */
+.round {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--chip);
+  cursor: pointer;
+  transition: background 0.25s ease, transform 0.35s var(--ease);
+}
+.round:hover { background: rgba(255, 255, 255, 0.15); }
+.round:active { transform: scale(0.9); }
+.round svg { width: 15px; height: 15px; }
+.swap { position: relative; display: grid; place-items: center; }
+.swap > svg { grid-area: 1 / 1; transition: opacity 0.25s var(--ease), transform 0.4s var(--ease); }
+.island.tpaused .i-tpause, .island:not(.tpaused) .i-tplay,
+.island.playing .i-play, .island:not(.playing) .i-pause { opacity: 0; transform: scale(0.5) rotate(-20deg); }
+
+/* новый трек */
+.v-peek { padding: 0 16px 0 8px; gap: 11px; }
+
+/* развёрнутая музыка */
+.v-music { flex-direction: column; align-items: stretch; padding: 18px 20px 12px; gap: 12px; }
+.m-top { display: flex; align-items: center; gap: 14px; }
+.m-top .title { font-size: 15px; }
+.m-top .artist { font-size: 12.5px; }
+.media-visibility {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--chip);
+  color: var(--dim);
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease, transform 0.2s var(--ease);
+}
+.media-visibility[hidden] { display: none; }
+.view:not(.on) .media-visibility { visibility: hidden; }
+.media-visibility:hover { background: var(--faint); color: var(--fg); }
+.media-visibility:active { transform: scale(0.9); }
+.media-visibility:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.media-visibility svg { width: 17px; height: 17px; }
+.media-hide { align-self: flex-start; }
+.media-restore { color: var(--accent); }
+.m-side { position: relative; align-self: flex-start; display: flex; justify-content: flex-end; min-width: 22px; margin-top: 5px; }
+.m-side .eq, .m-side .mchip { transition: opacity 0.35s var(--ease), transform 0.45s var(--ease); }
+.mchip { position: absolute; right: 0; top: -3px; display: flex; align-items: center; gap: 5px; padding: 3px 8px 3px 6px; border-radius: 10px; background: rgba(255, 159, 10, 0.13); color: var(--orange); font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.island.has-timer .m-side .eq, .island:not(.has-timer) .mchip { opacity: 0; transform: scale(0.7); }
+.m-bar { display: flex; align-items: center; gap: 10px; transition: opacity 0.3s ease; }
+.m-bar.off { opacity: 0; }
+.m-bar .t { font-size: 10.5px; color: var(--dim); font-variant-numeric: tabular-nums; min-width: 34px; }
+.m-bar .t:last-child { text-align: right; }
+.track { flex: 1; height: 4px; border-radius: 2px; background: var(--faint); overflow: hidden; }
+/* полоса прогресса двигается трансформацией: без пересчёта раскладки на каждом шаге */
+.fill { height: 100%; width: 100%; background: var(--fg); border-radius: 2px; transform-origin: left center; transform: scaleX(0); transition: transform 0.3s linear; }
+.m-ctrl { display: flex; justify-content: center; align-items: center; gap: 28px; margin-top: -2px; }
+.m-ctrl button {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.25s ease, transform 0.35s var(--ease);
+}
+.m-ctrl button:hover { background: rgba(255, 255, 255, 0.08); }
+.m-ctrl button:active { transform: scale(0.88); }
+.m-ctrl svg { width: 21px; height: 21px; }
+.m-ctrl .big svg { width: 27px; height: 27px; }
+
+/* громкость */
+.v-volume { padding: 0 16px; gap: 11px; }
+.spk { width: 19px; height: 19px; flex: none; }
+.spk path { transition: opacity 0.3s ease; }
+.spk .x { opacity: 0; }
+.v-volume.muted .spk .w1, .v-volume.muted .spk .w2, .v-volume.lowvol .spk .w2 { opacity: 0; }
+.v-volume.muted .spk .x { opacity: 1; }
+.vtrack { flex: 1; height: 5px; border-radius: 3px; background: var(--faint); overflow: hidden; }
+.vfill { height: 100%; width: 100%; background: var(--fg); border-radius: 3px; transform-origin: left center; transform: scaleX(0); transition: transform 0.35s var(--ease), background 0.3s ease; }
+.v-volume.muted .vfill { background: var(--dim); }
+.vpct { font-size: 12.5px; font-variant-numeric: tabular-nums; min-width: 26px; text-align: right; color: var(--dim); }
+
+/* зарядка и низкий заряд */
+.v-charge, .v-low { padding: 0 16px 0 18px; justify-content: space-between; }
+.lbl { font-size: 13.5px; font-weight: 600; }
+.right { display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
+.v-charge .right { color: var(--green); }
+.v-charge .pct, .v-low .pct { font-size: 13.5px; font-weight: 600; }
+.v-low .lbl, .v-low .right { color: var(--red); }
+/* при показе зарядки батарейка наполняется до текущего уровня */
+.v-charge .bfill { transform-origin: left center; transform: scaleX(0); transition: transform 0.2s ease; }
+.v-charge.on .bfill { transform: scaleX(1); transition: transform 0.9s var(--ease) 0.15s; }
+
+/* скопировано */
+.v-clip { padding: 0 16px 0 14px; gap: 9px; }
+.clip-ico { width: 17px; height: 17px; flex: none; color: var(--accent); }
+.v-clip .lbl { flex: none; font-size: 13px; }
+.snip { min-width: 0; flex: 1; font-size: 12.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* таймер закончился */
+.v-done { padding: 0 13px; gap: 12px; }
+.done-ring { color: var(--orange); transform: none; }
+.done-ring .rbg { stroke: var(--orange); stroke-opacity: 0.85; }
+.done-ring path { stroke-dasharray: 12; stroke-dashoffset: 12; }
+.v-done.on .done-ring path { stroke-dashoffset: 0; transition: stroke-dashoffset 0.5s var(--ease) 0.25s; }
+.v-done.on .done-ring { animation: pulse 2s var(--ease) infinite 0.6s; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+.pill {
+  flex: none;
+  height: 30px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 15px;
+  background: rgba(255, 159, 10, 0.15);
+  color: var(--orange);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.25s ease, transform 0.35s var(--ease);
+}
+.pill:hover { background: rgba(255, 159, 10, 0.24); }
+.pill:active { transform: scale(0.94); }
+.pill[hidden] { display: none; }
+
+/* точки микрофона и камеры справа от острова */
+.pdots { position: absolute; top: 0; left: 50%; display: flex; gap: 5px; pointer-events: none; will-change: transform; }
+.pd { width: 6px; height: 6px; border-radius: 50%; opacity: 0; transform: scale(0.3); transition: opacity 0.4s var(--ease), transform 0.5s var(--ease); }
+.pd.mic { background: var(--orange); }
+.pd.cam { background: var(--green); }
+.mic-on .pd.mic, .cam-on .pd.cam { opacity: 1; transform: scale(1); }
+
+/* «Анимации» выключены в трее */
+body.no-motion *, body.no-motion *::before, body.no-motion *::after { transition-duration: 0.01s !important; transition-delay: 0s !important; }
+body.no-motion .eq b { animation: none; transform: scaleY(0.6); }
+body.no-motion .v-done.on .done-ring { animation: none; }
+
+/* ---------- домашний экран: шестерёнка, загрузка системы ---------- */
+.v-home { justify-content: flex-start; gap: 9px; }
+.h-right { flex: none; display: flex; align-items: center; gap: 10px; }
+.dev-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border: none;
+  border-radius: 11px;
+  background: var(--chip);
+  color: var(--dim);
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.dev-chip:hover { background: var(--faint); color: var(--fg); }
+.dev-chip[hidden], .dev-chip-pct[hidden] { display: none; }
+.dev-chip-ico { display: grid; place-items: center; }
+.dev-chip-ico svg { width: 13px; height: 13px; }
+.dev-chip.low { color: var(--red); }
+.gear {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  margin-right: -5px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+  transition: background 0.25s ease, color 0.25s ease, transform 0.6s var(--ease);
+}
+.gear:hover { background: var(--chip); color: var(--fg); transform: rotate(60deg); }
+.gear svg { width: 16px; height: 16px; }
+.h-top { flex: none; height: 28px; }
+.priv { flex: none; height: 16px; line-height: 16px; }
+.sys { flex: none; display: flex; gap: 18px; height: 14px; align-items: center; }
+.sys[hidden] { display: none; }
+.meter { flex: 1; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.ml { flex: none; }
+.mt { flex: 1; height: 3px; border-radius: 2px; background: var(--faint); overflow: hidden; }
+.mf { display: block; height: 100%; width: 100%; border-radius: 2px; background: var(--fg); opacity: 0.75; transform-origin: left center; transform: scaleX(0); transition: transform 1.2s var(--ease), background 0.6s ease; }
+.mf.hot { background: var(--orange); opacity: 1; }
+.mv { flex: none; min-width: 28px; text-align: right; }
+
+/* ---------- подключили наушники ---------- */
+.v-device { padding: 0 14px 0 10px; gap: 12px; }
+.dev-ico { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--chip); color: var(--fg); }
+.dev-ico svg { width: 19px; height: 19px; }
+.v-device .dev-ico { transform: scale(0.6); opacity: 0; transition: transform 0.2s ease, opacity 0.15s ease; }
+.v-device.on .dev-ico { transform: none; opacity: 1; transition: transform 0.6s var(--ease) 0.05s, opacity 0.3s ease 0.05s; }
+.dev-batt { position: relative; flex: none; display: grid; place-items: center; }
+.dev-batt[hidden] { display: none; }
+.dev-batt span { position: absolute; font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--green); }
+.dev-batt .dfg { fill: none; stroke: var(--green); stroke-width: 2.2; stroke-linecap: round; stroke-dasharray: 50.27; stroke-dashoffset: 50.27; }
+.v-device.on .dev-batt .dfg { transition: stroke-dashoffset 1s var(--ease) 0.2s; }
+.dev-batt.low span { color: var(--red); }
+.dev-batt.low .dfg { stroke: var(--red); }
+
+/* ---------- раскладка и Caps Lock ---------- */
+.v-layout { justify-content: center; gap: 10px; padding: 0 14px; }
+.lang { min-width: 34px; height: 22px; padding: 0 7px; display: grid; place-items: center; border-radius: 6px; background: var(--fg); color: #000; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; }
+.v-layout .lang { transform: scale(0.7); transition: transform 0.2s ease; }
+.v-layout.on .lang { transform: none; transition: transform 0.55s var(--ease) 0.04s; }
+.lang-name { font-size: 13px; color: var(--dim); }
+.v-caps { justify-content: center; gap: 9px; padding: 0 16px; }
+.caps-ico { width: 18px; height: 18px; flex: none; color: var(--dim); transition: color 0.3s ease; }
+.v-caps.lit .caps-ico { color: var(--green); }
+.v-caps .lbl { font-size: 13px; }
+.caps-state { font-size: 12.5px; color: var(--dim); transition: color 0.3s ease; }
+.v-caps.lit .caps-state { color: var(--green); }
+
+/* ---------- перемотка ---------- */
+.track-hit { flex: 1; height: 16px; display: flex; align-items: center; cursor: pointer; }
+.track-hit .track { transition: height 0.3s var(--ease); }
+.track-hit:hover .track, .track-hit.drag .track { height: 7px; border-radius: 4px; }
+.track-hit.drag .fill { transition: none; }
+
+/* ---------- +1 мин ---------- */
+.round.plus { font-size: 12px; font-weight: 600; color: var(--orange); }

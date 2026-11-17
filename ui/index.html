@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dynamic Island</title>
+  <link rel="stylesheet" href="island.css">
+</head>
+<body>
+  <!-- точки «микрофон / камера включены», висят справа от острова -->
+  <div class="pdots" id="pdots" aria-hidden="true"><i class="pd mic"></i><i class="pd cam"></i></div>
+
+  <div id="island" class="island" data-mode="idle">
+
+    <!-- над развёрнутым окном: тонкая полоска, чтобы не закрывать вкладки -->
+    <div class="view v-sliver" data-view="sliver"><span class="line"></span></div>
+
+    <!-- музыка, свёрнуто -->
+    <div class="view v-mini" data-view="mini">
+      <div class="art art-s"></div>
+      <div class="mini-r">
+        <div class="eq"></div>
+        <span class="ttext" data-live="tleft">0:00</span>
+      </div>
+    </div>
+
+    <!-- таймер без музыки, свёрнуто -->
+    <div class="view v-tmini" data-view="tmini">
+      <svg class="ring ring-s" viewBox="0 0 20 20" aria-hidden="true"><circle class="rbg" cx="10" cy="10" r="8"/><circle class="rfg" cx="10" cy="10" r="8"/></svg>
+      <span class="ttext" data-live="tleft">0:00</span>
+    </div>
+
+    <!-- наведение без музыки: часы, батарея, таймер -->
+    <div class="view v-home" data-view="home">
+      <div class="h-top st" style="--i:0">
+        <div class="clk">
+          <span class="time" data-live="time">00:00</span>
+          <span class="date" data-live="date"></span>
+        </div>
+        <div class="h-right">
+          <button type="button" class="dev-chip" id="devChip" data-a="sound-settings" hidden><span class="dev-chip-ico" id="devChipIco"></span><span class="dev-chip-pct" id="devChipPct" hidden></span></button>
+          <div class="batt" id="clkBatt" hidden>
+            <span id="clkPct">100%</span>
+            <svg class="batt-ico" viewBox="0 0 30 14" aria-hidden="true">
+              <rect x="0.75" y="0.75" width="25" height="12.5" rx="3.6" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="1.5"/>
+              <rect x="27.5" y="4.5" width="2" height="5" rx="1" fill="currentColor" fill-opacity=".45"/>
+              <rect class="bfill" x="2.5" y="2.5" width="21.5" height="9" rx="2.2" fill="currentColor"/>
+            </svg>
+          </div>
+          <button type="button" class="media-visibility media-restore" id="mediaRestore" data-a="show-media" aria-label="Вернуть плеер" title="Вернуть плеер" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5.5" width="17" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="m10 8.8 5 3.2-5 3.2Z" fill="currentColor"/></svg>
+          </button>
+          <button type="button" class="gear" data-a="settings" aria-label="Настройки">
+            <svg viewBox="0 0 24 24"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4.9a7.5 7.5 0 0 0-2.6-1.5L14 2.4h-4l-.4 2.5A7.5 7.5 0 0 0 7 6.4l-2.4-.9-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-.9a7.5 7.5 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.5 7.5 0 0 0 2.6-1.5l2.4.9 2-3.4Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+      <button type="button" class="priv st" id="privLine" data-a="privacy-settings" style="--i:1" title="Открыть параметры конфиденциальности Windows" hidden></button>
+      <div class="sys st" id="sysRow" style="--i:2">
+        <div class="meter"><span class="ml">ЦП</span><span class="mt"><span class="mf" id="cpuFill"></span></span><span class="mv" id="cpuVal">0%</span></div>
+        <div class="meter"><span class="ml">Память</span><span class="mt"><span class="mf" id="memFill"></span></span><span class="mv" id="memVal">0%</span></div>
+      </div>
+      <div class="h-timer st" style="--i:3">
+        <div class="presets" id="presets">
+          <button type="button" data-t="5">5 мин</button>
+          <button type="button" data-t="15">15 мин</button>
+          <button type="button" data-t="25" data-kind="work" class="pomo">Помодоро 25</button>
+          <button type="button" class="tcustom-btn" id="tCustomBtn" data-a="tcustom-open" aria-label="Свой таймер" title="Свой таймер">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="7.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 9.5V13l2.4 1.6M9.5 3.5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <div class="tcustom away" id="tCustom">
+          <button type="button" class="round" data-a="tcustom-dec" aria-label="Меньше">−</button>
+          <span class="tcustom-val" id="tCustomVal" title="Колёсико или кнопки меняют минуты">10 мин</span>
+          <button type="button" class="round" data-a="tcustom-inc" aria-label="Больше">+</button>
+          <button type="button" class="pill tcustom-go" data-a="tcustom-start">Старт</button>
+          <button type="button" class="round" data-a="tcustom-close" aria-label="Назад">
+            <svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7 7 17" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <div class="running away" id="tRun">
+          <svg class="ring ring-m" viewBox="0 0 20 20" aria-hidden="true"><circle class="rbg" cx="10" cy="10" r="8"/><circle class="rfg" cx="10" cy="10" r="8"/></svg>
+          <div class="tinfo">
+            <span class="tbig" data-live="tleft">0:00</span>
+            <span class="tlbl" data-live="tlabel"></span>
+          </div>
+          <button type="button" class="round" data-a="tpause" aria-label="Пауза таймера">
+            <span class="swap">
+              <svg viewBox="0 0 24 24" class="i-tpause"><rect x="6.5" y="5" width="3.6" height="14" rx="1.2" fill="currentColor"/><rect x="13.9" y="5" width="3.6" height="14" rx="1.2" fill="currentColor"/></svg>
+              <svg viewBox="0 0 24 24" class="i-tplay"><path d="M8 5.6v12.8a1 1 0 0 0 1.5.9l10-6.4a1 1 0 0 0 0-1.8l-10-6.4A1 1 0 0 0 8 5.6Z" fill="currentColor"/></svg>
+            </span>
+          </button>
+          <button type="button" class="round plus" data-a="tplus" aria-label="Добавить минуту">+1</button>
+          <button type="button" class="round" data-a="tstop" aria-label="Остановить таймер">
+            <svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7 7 17" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- новый трек: короткий показ -->
+    <div class="view v-peek" data-view="peek">
+      <div class="art art-m"></div>
+      <div class="meta">
+        <div class="title" data-bind="title"></div>
+        <div class="artist" data-bind="artist"></div>
+      </div>
+      <div class="eq"></div>
+    </div>
+
+    <!-- музыка, развёрнуто -->
+    <div class="view v-music" data-view="music">
+      <div class="m-top st" style="--i:0" id="mTop">
+        <div class="art art-l"></div>
+        <div class="meta">
+          <button type="button" class="src" id="mediaSrc" data-a="cycle-media" title="Переключить источник"></button>
+          <div class="title" data-bind="title"></div>
+          <div class="artist" data-bind="artist"></div>
+        </div>
+        <div class="m-side">
+          <div class="eq"></div>
+          <div class="mchip">
+            <svg class="ring ring-xs" viewBox="0 0 20 20" aria-hidden="true"><circle class="rbg" cx="10" cy="10" r="8"/><circle class="rfg" cx="10" cy="10" r="8"/></svg>
+            <span data-live="tleft">0:00</span>
+          </div>
+        </div>
+        <button type="button" class="media-visibility media-hide" data-a="hide-media" aria-label="Скрыть плеер" title="Скрыть плеер">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div class="m-bar st" style="--i:1" id="bar">
+        <span class="t" id="tCur">0:00</span>
+        <div class="track-hit" id="seek"><div class="track"><div class="fill" id="fill"></div></div></div>
+        <span class="t" id="tLeft">-0:00</span>
+      </div>
+      <div class="m-ctrl st" style="--i:2">
+        <button type="button" data-a="prev" aria-label="Предыдущий трек">
+          <svg viewBox="0 0 24 24"><path d="M7 5.5v13M19 6.2v11.6a.8.8 0 0 1-1.2.7L9.6 12.7a.8.8 0 0 1 0-1.4l8.2-5.8a.8.8 0 0 1 1.2.7Z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button type="button" data-a="toggle" class="big" aria-label="Пауза или воспроизведение">
+          <span class="swap">
+            <svg viewBox="0 0 24 24" class="i-pause"><rect x="6" y="4.5" width="4.2" height="15" rx="1.3" fill="currentColor"/><rect x="13.8" y="4.5" width="4.2" height="15" rx="1.3" fill="currentColor"/></svg>
+            <svg viewBox="0 0 24 24" class="i-play"><path d="M7.5 5.3v13.4a1 1 0 0 0 1.5.9l10.6-6.7a1 1 0 0 0 0-1.8L9 4.4a1 1 0 0 0-1.5.9Z" fill="currentColor"/></svg>
+          </span>
+        </button>
+        <button type="button" data-a="next" aria-label="Следующий трек">
+          <svg viewBox="0 0 24 24"><path d="M17 5.5v13M5 6.2v11.6a.8.8 0 0 0 1.2.7l8.2-5.8a.8.8 0 0 0 0-1.4L6.2 5.5a.8.8 0 0 0-1.2.7Z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- громкость -->
+    <div class="view v-volume" data-view="volume">
+      <svg class="spk" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 9.5h3.2L12 5.6v12.8l-4.8-3.9H4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1Z" fill="currentColor"/>
+        <path class="w1" d="M15.5 9.2a4 4 0 0 1 0 5.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path class="w2" d="M18.2 6.8a7.5 7.5 0 0 1 0 10.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path class="x" d="M16 9.5l5 5m0-5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+      <div class="vtrack"><div class="vfill" id="vFill"></div></div>
+      <span class="vpct" id="vPct">0</span>
+    </div>
+
+    <!-- зарядка -->
+    <div class="view v-charge" data-view="charge">
+      <span class="lbl" id="chLbl">Зарядка</span>
+      <span class="right">
+        <span class="pct" id="chPct">0%</span>
+        <svg class="batt-ico" viewBox="0 0 30 14" aria-hidden="true">
+          <rect x="0.75" y="0.75" width="25" height="12.5" rx="3.6" fill="none" stroke="currentColor" stroke-opacity=".5" stroke-width="1.5"/>
+          <rect x="27.5" y="4.5" width="2" height="5" rx="1" fill="currentColor" fill-opacity=".5"/>
+          <rect class="bfill" x="2.5" y="2.5" width="21.5" height="9" rx="2.2" fill="currentColor"/>
+          <path d="M14.6 2.6 10.4 7.6h3.2l-1.1 3.8 4.3-5.1h-3.2Z" fill="#000"/>
+        </svg>
+      </span>
+    </div>
+
+    <!-- низкий заряд -->
+    <div class="view v-low" data-view="low">
+      <span class="lbl">Низкий заряд</span>
+      <span class="right"><span class="pct" id="lowPct">20%</span></span>
+    </div>
+
+    <!-- подключили наушники или колонку -->
+    <div class="view v-device" data-view="device">
+      <div class="dev-ico" id="devIco"></div>
+      <div class="meta">
+        <div class="title" id="devName"></div>
+        <div class="artist" id="devSub"></div>
+      </div>
+      <div class="dev-batt" id="devBatt">
+        <svg class="ring ring-l" viewBox="0 0 20 20" aria-hidden="true"><circle class="rbg" cx="10" cy="10" r="8"/><circle class="dfg" cx="10" cy="10" r="8"/></svg>
+        <span id="devPct">0</span>
+      </div>
+    </div>
+
+    <!-- раскладка клавиатуры -->
+    <div class="view v-layout" data-view="layout">
+      <span class="lang" id="langShort">РУ</span>
+      <span class="lang-name" id="langLong">Русская</span>
+    </div>
+
+    <!-- Caps Lock -->
+    <div class="view v-caps" data-view="caps">
+      <svg class="caps-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 4.5 12H9v4.5h6V12h4.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 20h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <span class="lbl">Caps Lock</span>
+      <span class="caps-state" id="capsState">вкл</span>
+    </div>
+
+    <!-- скопировано -->
+    <div class="view v-clip" data-view="clip">
+      <svg class="clip-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M15.5 8V6.5A2.5 2.5 0 0 0 13 4H7.5A2.5 2.5 0 0 0 5 6.5V13a2.5 2.5 0 0 0 2.5 2.5H8" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+      <span class="lbl">Скопировано</span>
+      <span class="snip" id="clipText"></span>
+    </div>
+
+    <!-- таймер закончился -->
+    <div class="view v-done" data-view="done">
+      <svg class="ring ring-l done-ring" viewBox="0 0 20 20" aria-hidden="true"><circle class="rbg" cx="10" cy="10" r="8"/><path d="M6.6 10.2l2.3 2.3 4.6-4.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div class="meta">
+        <div class="title" id="doneTitle">Время вышло</div>
+        <div class="artist" id="doneSub"></div>
+      </div>
+      <button type="button" class="pill" data-a="break" id="doneBreak">Перерыв 5 мин</button>
+      <button type="button" class="round" data-a="dismiss" aria-label="Закрыть">
+        <svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7 7 17" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <script src="island.js"></script>
+</body>
+</html>
