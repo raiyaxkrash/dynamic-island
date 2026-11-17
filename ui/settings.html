@@ -5,13 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Настройки Dynamic Island</title>
   <style>
-    /* Окно настроек: тот же чёрный, что у острова, тонкие разделители, переключатели как в iOS. */
     :root {
       --bg: #0b0b0d;
       --card: #151518;
       --line: rgba(255, 255, 255, 0.07);
       --fg: #f5f5f7;
-      --dim: rgba(245, 245, 247, 0.5);
+      --dim: rgba(245, 245, 247, 0.52);
       --on: #0a84ff;
       --off: rgba(255, 255, 255, 0.16);
       --ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -21,7 +20,7 @@
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden; }
     body {
       font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
-      font-size: 14px;
+      font-size: 13.5px;
       -webkit-font-smoothing: antialiased;
       user-select: none;
       display: flex;
@@ -30,63 +29,103 @@
     button { font: inherit; color: inherit; }
     :focus-visible { outline: 2px solid var(--on); outline-offset: 2px; }
 
-    header { height: 54px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 10px 0 20px; }
-    .logo { width: 30px; height: 12px; border-radius: 6px; background: #000; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18); position: relative; }
-    .logo::after { content: ""; position: absolute; right: 5px; top: 4px; width: 4px; height: 4px; border-radius: 50%; background: var(--on); }
+    header { height: 50px; flex: none; display: flex; align-items: center; gap: 11px; padding: 0 10px 0 18px; }
+    .logo { width: 28px; height: 11px; border-radius: 6px; background: #000; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2); position: relative; }
+    .logo::after { content: ""; position: absolute; right: 5px; top: 3.5px; width: 4px; height: 4px; border-radius: 50%; background: var(--on); }
     header h1 { flex: 1; margin: 0; font-size: 14px; font-weight: 600; letter-spacing: 0.01em; }
-    .close { width: 34px; height: 34px; border: none; border-radius: 8px; background: transparent; cursor: pointer; display: grid; place-items: center; color: var(--dim); transition: background 0.2s ease, color 0.2s ease; }
+    .close { width: 32px; height: 32px; border: none; border-radius: 8px; background: transparent; cursor: pointer; display: grid; place-items: center; color: var(--dim); transition: background 0.2s ease, color 0.2s ease; }
     .close:hover { background: #c42b1c; color: #fff; }
     .close svg { width: 14px; height: 14px; }
 
-    main { flex: 1; overflow-y: auto; padding: 4px 20px 20px; scrollbar-width: thin; }
-    main::-webkit-scrollbar { width: 6px; }
-    main::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 3px; }
+    .tabs {
+      flex: none;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 4px;
+      margin: 0 18px 10px;
+      padding: 3px;
+      border-radius: 11px;
+      background: rgba(255, 255, 255, 0.06);
+    }
+    .tab-btn {
+      height: 30px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--dim);
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+    .tab-btn:hover { color: var(--fg); }
+    .tab-btn.active { background: rgba(255, 255, 255, 0.14); color: #fff; }
 
-    section { margin-top: 18px; opacity: 0; transform: translateY(8px); animation: rise 0.6s var(--ease) forwards; }
-    section:nth-of-type(2) { animation-delay: 0.05s; }
-    section:nth-of-type(3) { animation-delay: 0.1s; }
-    section:nth-of-type(4) { animation-delay: 0.15s; }
-    section:nth-of-type(5) { animation-delay: 0.2s; }
-    @keyframes rise { to { opacity: 1; transform: none; } }
-    h2 { margin: 0 0 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
-    .card { background: var(--card); border-radius: 14px; overflow: hidden; }
-    .row { display: flex; align-items: center; gap: 14px; padding: 13px 16px; min-height: 56px; }
+    main { flex: 1; overflow-y: auto; padding: 2px 18px 18px; scrollbar-width: thin; }
+    main::-webkit-scrollbar { width: 6px; }
+    main::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.14); border-radius: 3px; }
+
+    .pane { display: none; }
+    .pane.active { display: block; }
+    section + section { margin-top: 16px; }
+    h2 { margin: 4px 0 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--dim); }
+    .card { background: var(--card); border-radius: 14px; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.04); }
+    .row { display: flex; align-items: center; gap: 12px; padding: 11px 15px; min-height: 50px; }
+    .row.compact { min-height: 40px; padding-bottom: 8px; }
     .row + .row { border-top: 1px solid var(--line); }
     .txt { flex: 1; min-width: 0; }
-    .t { font-size: 14px; }
-    .d { font-size: 12px; color: var(--dim); margin-top: 2px; line-height: 1.35; }
+    .t { font-size: 13.5px; font-weight: 500; }
+    .d { font-size: 11.5px; color: var(--dim); margin-top: 2px; line-height: 1.35; }
+    .d.err { color: #ff9f0a; }
 
-    /* переключатель */
-    .sw { position: relative; flex: none; width: 44px; height: 26px; }
+    .sw { position: relative; flex: none; width: 42px; height: 24px; }
     .sw input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; z-index: 1; }
-    .sw span { position: absolute; inset: 0; border-radius: 13px; background: var(--off); transition: background 0.3s var(--ease); }
+    .sw span { position: absolute; inset: 0; border-radius: 12px; background: var(--off); transition: background 0.25s var(--ease); }
     .sw span::after {
       content: "";
       position: absolute;
-      top: 3px;
-      left: 3px;
-      width: 20px;
-      height: 20px;
+      top: 2.5px;
+      left: 2.5px;
+      width: 19px;
+      height: 19px;
       border-radius: 50%;
       background: #fff;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-      transition: transform 0.45s var(--ease), width 0.2s var(--ease);
+      transition: transform 0.35s var(--ease);
     }
-    .sw input:active + span::after { width: 25px; }
     .sw input:checked + span { background: var(--on); }
     .sw input:checked + span::after { transform: translateX(18px); }
-    .sw input:checked:active + span::after { transform: translateX(13px); }
-    .sw input:focus-visible + span { outline: 2px solid var(--on); outline-offset: 2px; }
 
-    /* выбор из двух или трёх вариантов */
-    .seg { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); padding: 3px; border-radius: 10px; background: rgba(255, 255, 255, 0.07); margin: 0 16px 14px; }
+    .seg { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); padding: 3px; border-radius: 10px; background: rgba(255, 255, 255, 0.07); margin: 0 15px 13px; }
     .seg.two { grid-template-columns: repeat(2, 1fr); }
-    .seg .pill { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / 3); border-radius: 8px; background: rgba(255, 255, 255, 0.16); transition: transform 0.45s var(--ease); }
+    .seg.four { grid-template-columns: repeat(4, 1fr); }
+    .seg .pill { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / 3); border-radius: 7.5px; background: rgba(255, 255, 255, 0.16); transition: transform 0.35s var(--ease); }
     .seg.two .pill { width: calc((100% - 6px) / 2); }
-    .seg button { position: relative; height: 30px; border: none; background: transparent; font-size: 12.5px; color: var(--dim); cursor: pointer; transition: color 0.25s ease; }
+    .seg.four .pill { width: calc((100% - 6px) / 4); }
+    .seg button { position: relative; height: 28px; border: none; background: transparent; font-size: 12px; color: var(--dim); cursor: pointer; transition: color 0.2s ease; padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .seg button[aria-pressed="true"] { color: var(--fg); font-weight: 600; }
 
-    /* кнопка записи горячих клавиш и обновления */
+    .swatches { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 15px 14px; }
+    .swatch {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.15);
+      padding: 0;
+      cursor: pointer;
+      position: relative;
+      transition: transform 0.2s var(--ease), border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .swatch:hover { transform: scale(1.1); }
+    .swatch[aria-pressed="true"] {
+      border-color: #fff;
+      box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px rgba(255, 255, 255, 0.55);
+      transform: scale(1.06);
+    }
+    .swatch.auto {
+      background: conic-gradient(from 45deg, #ff5e62, #ff9f0a, #30d158, #5ac8fa, #0a84ff, #bf5af2, #ff5e62);
+    }
+
     .kbtn, .actbtn {
       flex: none;
       height: 28px;
@@ -101,11 +140,11 @@
     }
     .kbtn:hover, .actbtn:hover { background: rgba(255, 255, 255, 0.14); }
     .kbtn.rec { border-color: var(--on); color: var(--on); background: rgba(10, 132, 255, 0.14); }
-    .kbtn.err { border-color: #ff9f0a; color: #ff9f0a; background: rgba(255, 159, 10, 0.12); }
-    .d.err { color: #ff9f0a; }
+    .kbtn.err { border-color: #ff9f0a; color: #ff9f0a; background: rgba(10, 132, 255, 0.06); }
     .actbtn.accent { border-color: transparent; background: var(--on); color: #fff; }
+    .actbtn.danger:hover { border-color: rgba(255, 69, 58, 0.5); color: #ff6961; background: rgba(255, 69, 58, 0.12); }
 
-    footer { flex: none; padding: 12px 20px 16px; font-size: 11.5px; color: var(--dim); display: flex; justify-content: space-between; border-top: 1px solid var(--line); }
+    footer { flex: none; padding: 10px 18px 13px; font-size: 11.5px; color: var(--dim); display: flex; justify-content: space-between; border-top: 1px solid var(--line); }
   </style>
 </head>
 <body>
@@ -117,332 +156,300 @@
     </button>
   </header>
 
+  <nav class="tabs" role="tablist">
+    <button type="button" class="tab-btn active" data-tab="look" data-i18n="tab_look">Оформление</button>
+    <button type="button" class="tab-btn" data-tab="behavior" data-i18n="tab_behavior">Поведение</button>
+    <button type="button" class="tab-btn" data-tab="modules" data-i18n="tab_modules">Функции</button>
+    <button type="button" class="tab-btn" data-tab="system" data-i18n="tab_system">Система</button>
+  </nav>
+
   <main>
-    <section>
-      <h2 data-i18n="s_general">Основное</h2>
-      <div class="card">
-        <label class="row" for="autostart">
-          <div class="txt"><div class="t" data-i18n="s_autostart">Запускать вместе с Windows</div><div class="d" data-i18n="s_autostart_d">Остров появится сразу после входа в систему</div></div>
-          <span class="sw"><input type="checkbox" id="autostart" data-key="autostart"><span></span></span>
-        </label>
-        <label class="row" for="animations">
-          <div class="txt"><div class="t" data-i18n="s_animations">Анимации</div><div class="d" data-i18n="s_animations_d">Плавное раскрытие и смена экранов. Работают, даже если анимации Windows выключены</div></div>
-          <span class="sw"><input type="checkbox" id="animations" data-key="animations"><span></span></span>
-        </label>
-        <div class="row" style="border-bottom:none">
-          <div class="txt"><div class="t" data-i18n="s_lang">Язык интерфейса</div></div>
-        </div>
-        <div class="seg" data-seg="lang" data-default="auto" role="group">
-          <span class="pill"></span>
-          <button type="button" data-v="auto" data-i18n="s_lang_auto">Авто</button>
-          <button type="button" data-v="ru">Русский</button>
-          <button type="button" data-v="en">English</button>
-        </div>
-        <div class="row" style="border-bottom:none">
-          <div class="txt"><div class="t" data-i18n="s_border">Стиль обводки</div></div>
-        </div>
-        <div class="seg" data-seg="border_style" data-default="subtle" role="group">
-          <span class="pill"></span>
-          <button type="button" data-v="subtle" data-i18n="s_border_subtle">Тонкая</button>
-          <button type="button" data-v="glow" data-i18n="s_border_glow">Свечение</button>
-          <button type="button" data-v="none" data-i18n="s_border_none">Без рамки</button>
-        </div>
-        <div class="row" style="border-bottom:none">
-          <div class="txt"><div class="t" data-i18n="s_monitor">Экран</div><div class="d" data-i18n="s_monitor_d">На каком мониторе показывать остров</div></div>
-        </div>
-        <div class="seg two" data-seg="monitor_mode" data-default="primary" role="group">
-          <span class="pill"></span>
-          <button type="button" data-v="primary" data-i18n="s_mon_primary">Основной</button>
-          <button type="button" data-v="cursor" data-i18n="s_mon_cursor">За курсором</button>
-        </div>
-        <div class="row" style="border-bottom:none">
-          <div class="txt"><div class="t" data-i18n="s_align">Положение по горизонтали</div></div>
-        </div>
-        <div class="seg" data-seg="align" data-default="center" role="group">
-          <span class="pill"></span>
-          <button type="button" data-v="left" data-i18n="s_align_left">Слева</button>
-          <button type="button" data-v="center" data-i18n="s_align_center">По центру</button>
-          <button type="button" data-v="right" data-i18n="s_align_right">Справа</button>
-        </div>
-        <div class="row" style="border-bottom:none">
-          <div class="txt"><div class="t" data-i18n="s_top_margin">Отступ от верха экрана</div></div>
-        </div>
-        <div class="seg" data-seg="top_margin" data-type="num" data-default="6" role="group">
-          <span class="pill"></span>
-          <button type="button" data-v="0">0 px</button>
-          <button type="button" data-v="6">6 px</button>
-          <button type="button" data-v="14">14 px</button>
-        </div>
-        <label class="row" for="wheel_collapsed">
-          <div class="txt"><div class="t" data-i18n="s_wheel">Колёсико по свёрнутому острову</div><div class="d" data-i18n="s_wheel_d">Менять громкость прокруткой, когда под островом нет окна</div></div>
-          <span class="sw"><input type="checkbox" id="wheel_collapsed" data-key="wheel_collapsed"><span></span></span>
-        </label>
-        <label class="row" for="hotkeys">
-          <div class="txt"><div class="t" data-i18n="s_hotkeys">Горячие клавиши</div><div class="d" data-i18n="s_hotkeys_d">Глобальные сочетания для быстрого доступа</div></div>
-          <span class="sw"><input type="checkbox" id="hotkeys" data-key="hotkeys"><span></span></span>
-        </label>
-        <div class="row">
-          <div class="txt"><div class="t" data-i18n="s_hk_toggle">Открыть / свернуть остров</div></div>
-          <button type="button" class="kbtn" data-hk="hotkey_toggle">Ctrl+Alt+I</button>
-        </div>
-        <div class="row">
-          <div class="txt"><div class="t" data-i18n="s_hk_timer">Старт помодоро / пауза</div></div>
-          <button type="button" class="kbtn" data-hk="hotkey_timer">Ctrl+Alt+T</button>
-        </div>
-      </div>
-    </section>
+    <div class="pane active" data-pane="look">
+      <section>
+        <div class="card">
+          <div class="row compact" style="border-bottom:none">
+            <div class="txt"><div class="t" data-i18n="s_accent">Акцентный цвет</div><div class="d" data-i18n="s_accent_d">Автоподбор под обложку трека или свой фирменный оттенок</div></div>
+          </div>
+          <div class="swatches" id="accentSwatches" role="group">
+            <button type="button" class="swatch auto" data-accent="auto" title="Auto"></button>
+            <button type="button" class="swatch" data-accent="#0a84ff" style="background:#0a84ff" title="Blue"></button>
+            <button type="button" class="swatch" data-accent="#5ac8fa" style="background:#5ac8fa" title="Cyan"></button>
+            <button type="button" class="swatch" data-accent="#bf5af2" style="background:#bf5af2" title="Purple"></button>
+            <button type="button" class="swatch" data-accent="#ff375f" style="background:#ff375f" title="Pink"></button>
+            <button type="button" class="swatch" data-accent="#ff9f0a" style="background:#ff9f0a" title="Amber"></button>
+            <button type="button" class="swatch" data-accent="#30d158" style="background:#30d158" title="Green"></button>
+            <button type="button" class="swatch" data-accent="#f5f5f7" style="background:#f5f5f7" title="White"></button>
+          </div>
 
-    <section>
-      <h2 data-i18n="s_show">Что показывать</h2>
-      <div class="card">
-        <label class="row" for="devices">
-          <div class="txt"><div class="t" data-i18n="s_devices">Наушники и колонки</div><div class="d" data-i18n="s_devices_d">Название и заряд при подключении</div></div>
-          <span class="sw"><input type="checkbox" id="devices" data-key="devices"><span></span></span>
-        </label>
-        <label class="row" for="clipboard">
-          <div class="txt"><div class="t" data-i18n="s_clipboard">Скопированное</div><div class="d" data-i18n="s_clipboard_d">Короткая подсказка с началом текста. Пароли из менеджеров не показываются</div></div>
-          <span class="sw"><input type="checkbox" id="clipboard" data-key="clipboard"><span></span></span>
-        </label>
-        <label class="row" for="privacy">
-          <div class="txt"><div class="t" data-i18n="s_privacy">Микрофон и камера</div><div class="d" data-i18n="s_privacy_d">Точка рядом с островом, когда их кто-то использует</div></div>
-          <span class="sw"><input type="checkbox" id="privacy" data-key="privacy"><span></span></span>
-        </label>
-        <label class="row" for="keyboard">
-          <div class="txt"><div class="t" data-i18n="s_keyboard">Раскладка и Caps Lock</div><div class="d" data-i18n="s_keyboard_d">Коротко показывает «РУ» или «EN», когда вы переключаете язык</div></div>
-          <span class="sw"><input type="checkbox" id="keyboard" data-key="keyboard"><span></span></span>
-        </label>
-        <label class="row" for="hide_paused">
-          <div class="txt"><div class="t" data-i18n="s_hide_paused">Сворачивать долгую паузу</div><div class="d" data-i18n="s_hide_paused_d">Если музыка стоит на паузе больше трёх минут, остров прячет обложку</div></div>
-          <span class="sw"><input type="checkbox" id="hide_paused" data-key="hide_paused"><span></span></span>
-        </label>
-        <label class="row" for="sysload">
-          <div class="txt"><div class="t" data-i18n="s_sysload">Загрузка системы</div><div class="d" data-i18n="s_sysload_d">Процессор и память при наведении</div></div>
-          <span class="sw"><input type="checkbox" id="sysload" data-key="sysload"><span></span></span>
-        </label>
-        <label class="row" for="dnd">
-          <div class="txt"><div class="t" data-i18n="s_dnd">Тихий режим (Не беспокоить)</div><div class="d" data-i18n="s_dnd_d">Постоянно скрывать мелкие всплывающие подсказки (кнопка 🌙)</div></div>
-          <span class="sw"><input type="checkbox" id="dnd" data-key="dnd"><span></span></span>
-        </label>
-      </div>
-    </section>
+          <div class="row compact" style="border-bottom:none">
+            <div class="txt"><div class="t" data-i18n="s_backdrop">Материал фона</div></div>
+          </div>
+          <div class="seg" data-seg="backdrop" data-default="oled" role="group">
+            <span class="pill"></span>
+            <button type="button" data-v="oled" data-i18n="s_bg_oled">OLED Чёрный</button>
+            <button type="button" data-v="graphite" data-i18n="s_bg_graphite">Графит</button>
+            <button type="button" data-v="glass" data-i18n="s_bg_glass">Стекло</button>
+          </div>
 
-    <section>
-      <h2 data-i18n="s_timer">Таймер</h2>
-      <div class="card">
-        <label class="row" for="sounds">
-          <div class="txt"><div class="t" data-i18n="s_sounds">Звук в конце</div><div class="d" data-i18n="s_sounds_d">Короткий сигнал, когда таймер или помодоро закончились</div></div>
-          <span class="sw"><input type="checkbox" id="sounds" data-key="sounds"><span></span></span>
-        </label>
-        <label class="row" for="quiet_pomo">
-          <div class="txt"><div class="t" data-i18n="s_quiet_pomo">Тихий режим в помодоро</div><div class="d" data-i18n="s_quiet_pomo_d">Скрывать мелкие всплывающие тосты во время фокуса</div></div>
-          <span class="sw"><input type="checkbox" id="quiet_pomo" data-key="quiet_pomo"><span></span></span>
-        </label>
-        <div class="row" style="border-bottom:none">
-          <div class="txt"><div class="t" data-i18n="s_sound_vol">Громкость сигнала</div></div>
-        </div>
-        <div class="seg" data-seg="sound_volume" data-type="num" data-default="70" role="group">
-          <span class="pill"></span>
-          <button type="button" data-v="25" data-i18n="s_vol_low">Тихо</button>
-          <button type="button" data-v="70" data-i18n="s_vol_mid">Обычно</button>
-          <button type="button" data-v="100" data-i18n="s_vol_high">Громко</button>
-        </div>
-        <div class="row">
-          <div class="txt"><div class="t" data-i18n="s_pomo_stats">Статистика помодоро</div><div class="d" id="pomoStats">Сегодня: 0 · За 7 дней: 0 · Серия: 0 дн.</div></div>
-        </div>
-      </div>
-    </section>
+          <div class="row compact" style="border-bottom:none">
+            <div class="txt"><div class="t" data-i18n="s_border">Стиль обводки</div></div>
+          </div>
+          <div class="seg" data-seg="border_style" data-default="subtle" role="group">
+            <span class="pill"></span>
+            <button type="button" data-v="subtle" data-i18n="s_border_subtle">Тонкая</button>
+            <button type="button" data-v="glow" data-i18n="s_border_glow">Свечение</button>
+            <button type="button" data-v="none" data-i18n="s_border_none">Без рамки</button>
+          </div>
 
-    <section>
-      <h2 data-i18n="s_tabs">Над вкладками</h2>
-      <div class="card">
-        <div class="row" style="border:none">
-          <div class="txt"><div class="t" data-i18n="s_dwell">Задержка раскрытия</div><div class="d" data-i18n="s_dwell_d">Сколько держать курсор на полоске над развёрнутым окном, чтобы остров раскрылся</div></div>
-        </div>
-        <div class="seg" data-seg="dwell_ms" data-type="num" data-default="450" role="group">
-          <span class="pill"></span>
-          <button type="button" data-v="250" data-i18n="s_fast">Быстро</button>
-          <button type="button" data-v="450" data-i18n="s_normal">Обычно</button>
-          <button type="button" data-v="750" data-i18n="s_slow">Медленно</button>
-        </div>
-      </div>
-    </section>
+          <div class="row compact" style="border-bottom:none">
+            <div class="txt"><div class="t" data-i18n="s_scale">Масштаб острова</div></div>
+          </div>
+          <div class="seg" data-seg="ui_scale" data-type="num" data-default="100" role="group">
+            <span class="pill"></span>
+            <button type="button" data-v="90">90%</button>
+            <button type="button" data-v="100">100%</button>
+            <button type="button" data-v="110">110%</button>
+          </div>
 
-    <section>
-      <h2 data-i18n="s_updates">Обновления</h2>
-      <div class="card">
-        <div class="row">
-          <div class="txt"><div class="t" data-i18n="s_upd_title">Версия на GitHub</div><div class="d" id="updStatus"></div></div>
-          <button type="button" class="actbtn" id="updBtn" data-i18n="s_upd_btn">Проверить</button>
+          <div class="row compact" style="border-bottom:none">
+            <div class="txt"><div class="t" data-i18n="s_idle">Вид в свёрнутом покое</div><div class="d" data-i18n="s_idle_d">Что показывать, когда нет активной музыки и таймера</div></div>
+          </div>
+          <div class="seg" data-seg="idle_style" data-default="pill" role="group">
+            <span class="pill"></span>
+            <button type="button" data-v="pill" data-i18n="s_idle_pill">Пилюля</button>
+            <button type="button" data-v="clock" data-i18n="s_idle_clock">Мини-часы</button>
+            <button type="button" data-v="hidden" data-i18n="s_idle_hidden">Скрывать</button>
+          </div>
+
+          <label class="row" for="clock_24h">
+            <div class="txt"><div class="t" data-i18n="s_clock_24h">24-часовой формат времени</div></div>
+            <span class="sw"><input type="checkbox" id="clock_24h" data-key="clock_24h"><span></span></span>
+          </label>
+          <label class="row" for="clock_seconds">
+            <div class="txt"><div class="t" data-i18n="s_clock_sec">Показывать секунды на часах</div></div>
+            <span class="sw"><input type="checkbox" id="clock_seconds" data-key="clock_seconds"><span></span></span>
+          </label>
         </div>
-      </div>
-    </section>
+      </section>
+    </div>
+
+    <div class="pane" data-pane="behavior">
+      <section>
+        <div class="card">
+          <div class="row compact" style="border-bottom:none">
+            <div class="txt"><div class="t" data-i18n="s_expand">Способ раскрытия</div><div class="d" data-i18n="s_expand_d">Как открывать остров с рабочего стола</div></div>
+          </div>
+          <div class="seg" data-seg="expand_mode" data-default="hover" role="group">
+            <span class="pill"></span>
+            <button type="button" data-v="hover" data-i18n="s_exp_hover">Наведение</button>
+            <button type="button" data-v="click" data-i18n="s_exp_click">По клику</button>
+            <button type="button" data-v="hotkey" data-i18n="s_exp_hotkey">Хоткей</button>
+          </div>
+
+          <label class="row" for="animations">
+            <div class="txt"><div class="t" data-i18n="s_animations">Анимации</div><div class="d" data-i18n="s_animations_d">Плавное раскрытие и смена экранов. Работают, даже если анимации Windows выключены</div></div>
+            <span class="sw"><input type="checkbox" id="animations" data-key="animations"><span></span></span>
+          </label>
+
+          <div class="row compact" style="border-bottom:none">
+            <div class="txt"><div class="t" data-i18n="s_spring">Характер пружины</div></div>
+          </div>
+          <div class="seg four" data-seg="spring_preset" data-default="normal" role="group">
+            <span class="pill"></span>
+            <button type="button" data-v="soft" data-i18n="s_sp_soft">Мягкая</button>
+            <button type="button" data-v="normal" data-i18n="s_sp_normal">Обычная</button>
+            <button type="button" data-v="bouncy" data-i18n="s_sp_bouncy">Упругая</button>
+            <button type="button" data-v="snappy" data-i18n="s_sp_snappy">Резкая</button>
+          </div>
+
+          <div class="row compact" style="border-bottom:none">
+            <div class="txt"><div class="t" data-i18n="s_monitor">Экран</div><div class="d" data-i18n="s_monitor_d">На каком мониторе показывать остров</div></div>
+          </div>
+          <div class="seg two" data-seg="monitor_mode" data-default="primary" role="group">
+            <span class="pill"></span>
+            <button type="button" data-v="primary" data-i18n="s_mon_primary">Основной</button>
+            <button type="button" data-v="cursor" data-i18n="s_mon_cursor">За курсором</button>
+          </div>
+
+          <div class="row compact" style="border-bottom:none">
+            <div class="txt"><div class="t" data-i18n="s_align">Положение по горизонтали</div></div>
+          </div>
+          <div class="seg" data-seg="align" data-default="center" role="group">
+            <span class="pill"></span>
+            <button type="button" data-v="left" data-i18n="s_align_left">Слева</button>
+            <button type="button" data-v="center" data-i18n="s_align_center">По центру</button>
+            <button type="button" data-v="right" data-i18n="s_align_right">Справа</button>
+          </div>
+
+          <div class="row compact" style="border-bottom:none">
+            <div class="txt"><div class="t" data-i18n="s_top_margin">Отступ от верха экрана</div></div>
+          </div>
+          <div class="seg four" data-seg="top_margin" data-type="num" data-default="6" role="group">
+            <span class="pill"></span>
+            <button type="button" data-v="0">0 px</button>
+            <button type="button" data-v="6">6 px</button>
+            <button type="button" data-v="14">14 px</button>
+            <button type="button" data-v="22">22 px</button>
+          </div>
+
+          <div class="row compact" style="border-bottom:none">
+            <div class="txt"><div class="t" data-i18n="s_dwell">Задержка над вкладками</div><div class="d" data-i18n="s_dwell_d">Сколько держать курсор на полоске над развёрнутым окном</div></div>
+          </div>
+          <div class="seg" data-seg="dwell_ms" data-type="num" data-default="450" role="group">
+            <span class="pill"></span>
+            <button type="button" data-v="250" data-i18n="s_fast">Быстро</button>
+            <button type="button" data-v="450" data-i18n="s_normal">Обычно</button>
+            <button type="button" data-v="750" data-i18n="s_slow">Медленно</button>
+          </div>
+
+          <label class="row" for="wheel_collapsed">
+            <div class="txt"><div class="t" data-i18n="s_wheel">Колёсико по свёрнутому острову</div><div class="d" data-i18n="s_wheel_d">Менять громкость прокруткой, когда под островом нет окна</div></div>
+            <span class="sw"><input type="checkbox" id="wheel_collapsed" data-key="wheel_collapsed"><span></span></span>
+          </label>
+        </div>
+      </section>
+    </div>
+
+    <div class="pane" data-pane="modules">
+      <section>
+        <h2 data-i18n="s_timer">Таймер</h2>
+        <div class="card">
+          <div class="row compact" style="border-bottom:none">
+            <div class="txt"><div class="t" data-i18n="s_pomo_work">Длительность Помодоро</div></div>
+          </div>
+          <div class="seg four" data-seg="pomo_work_min" data-type="num" data-default="25" role="group">
+            <span class="pill"></span>
+            <button type="button" data-v="15">15</button>
+            <button type="button" data-v="25">25</button>
+            <button type="button" data-v="45">45</button>
+            <button type="button" data-v="50">50</button>
+          </div>
+
+          <div class="row compact" style="border-bottom:none">
+            <div class="txt"><div class="t" data-i18n="s_pomo_break">Длительность перерыва</div></div>
+          </div>
+          <div class="seg" data-seg="pomo_break_min" data-type="num" data-default="5" role="group">
+            <span class="pill"></span>
+            <button type="button" data-v="5">5</button>
+            <button type="button" data-v="10">10</button>
+            <button type="button" data-v="15">15</button>
+          </div>
+
+          <label class="row" for="sounds">
+            <div class="txt"><div class="t" data-i18n="s_sounds">Звук в конце</div><div class="d" data-i18n="s_sounds_d">Короткий сигнал, когда таймер или помодоро закончились</div></div>
+            <span class="sw"><input type="checkbox" id="sounds" data-key="sounds"><span></span></span>
+          </label>
+          <div class="row compact" style="border-bottom:none">
+            <div class="txt"><div class="t" data-i18n="s_sound_vol">Громкость сигнала</div></div>
+          </div>
+          <div class="seg" data-seg="sound_volume" data-type="num" data-default="70" role="group">
+            <span class="pill"></span>
+            <button type="button" data-v="25" data-i18n="s_vol_low">Тихо</button>
+            <button type="button" data-v="70" data-i18n="s_vol_mid">Обычно</button>
+            <button type="button" data-v="100" data-i18n="s_vol_high">Громко</button>
+          </div>
+          <label class="row" for="quiet_pomo">
+            <div class="txt"><div class="t" data-i18n="s_quiet_pomo">Тихий режим в помодоро</div><div class="d" data-i18n="s_quiet_pomo_d">Скрывать мелкие всплывающие тосты во время фокуса</div></div>
+            <span class="sw"><input type="checkbox" id="quiet_pomo" data-key="quiet_pomo"><span></span></span>
+          </label>
+          <div class="row">
+            <div class="txt"><div class="t" data-i18n="s_pomo_stats">Статистика помодоро</div><div class="d" id="pomoStats">Сегодня: 0 · За 7 дней: 0 · Серия: 0 дн.</div></div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2 data-i18n="s_show">Что показывать</h2>
+        <div class="card">
+          <label class="row" for="devices">
+            <div class="txt"><div class="t" data-i18n="s_devices">Наушники и колонки</div><div class="d" data-i18n="s_devices_d">Название и заряд при подключении</div></div>
+            <span class="sw"><input type="checkbox" id="devices" data-key="devices"><span></span></span>
+          </label>
+          <label class="row" for="clipboard">
+            <div class="txt"><div class="t" data-i18n="s_clipboard">Скопированное</div><div class="d" data-i18n="s_clipboard_d">Текст и скриншоты в ОЗУ. Пароли из менеджеров не показываются</div></div>
+            <span class="sw"><input type="checkbox" id="clipboard" data-key="clipboard"><span></span></span>
+          </label>
+          <label class="row" for="privacy">
+            <div class="txt"><div class="t" data-i18n="s_privacy">Микрофон и камера</div><div class="d" data-i18n="s_privacy_d">Точка рядом с островом, когда их кто-то использует</div></div>
+            <span class="sw"><input type="checkbox" id="privacy" data-key="privacy"><span></span></span>
+          </label>
+          <label class="row" for="keyboard">
+            <div class="txt"><div class="t" data-i18n="s_keyboard">Раскладка и Caps Lock</div><div class="d" data-i18n="s_keyboard_d">Коротко показывает «РУ» или «EN», когда вы переключаете язык</div></div>
+            <span class="sw"><input type="checkbox" id="keyboard" data-key="keyboard"><span></span></span>
+          </label>
+          <label class="row" for="hide_paused">
+            <div class="txt"><div class="t" data-i18n="s_hide_paused">Сворачивать долгую паузу</div><div class="d" data-i18n="s_hide_paused_d">Если музыка стоит на паузе больше трёх минут, остров прячет обложку</div></div>
+            <span class="sw"><input type="checkbox" id="hide_paused" data-key="hide_paused"><span></span></span>
+          </label>
+          <label class="row" for="sysload">
+            <div class="txt"><div class="t" data-i18n="s_sysload">Загрузка системы</div><div class="d" data-i18n="s_sysload_d">Процессор и память при наведении</div></div>
+            <span class="sw"><input type="checkbox" id="sysload" data-key="sysload"><span></span></span>
+          </label>
+          <label class="row" for="dnd">
+            <div class="txt"><div class="t" data-i18n="s_dnd">Тихий режим (Не беспокоить)</div><div class="d" data-i18n="s_dnd_d">Постоянно скрывать мелкие всплывающие подсказки (кнопка 🌙)</div></div>
+            <span class="sw"><input type="checkbox" id="dnd" data-key="dnd"><span></span></span>
+          </label>
+        </div>
+      </section>
+    </div>
+
+    <div class="pane" data-pane="system">
+      <section>
+        <h2 data-i18n="s_general">Основное</h2>
+        <div class="card">
+          <label class="row" for="autostart">
+            <div class="txt"><div class="t" data-i18n="s_autostart">Запускать вместе с Windows</div><div class="d" data-i18n="s_autostart_d">Остров появится сразу после входа в систему</div></div>
+            <span class="sw"><input type="checkbox" id="autostart" data-key="autostart"><span></span></span>
+          </label>
+          <div class="row compact" style="border-bottom:none">
+            <div class="txt"><div class="t" data-i18n="s_lang">Язык интерфейса</div></div>
+          </div>
+          <div class="seg" data-seg="lang" data-default="auto" role="group">
+            <span class="pill"></span>
+            <button type="button" data-v="auto" data-i18n="s_lang_auto">Авто</button>
+            <button type="button" data-v="ru">Русский</button>
+            <button type="button" data-v="en">English</button>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2 data-i18n="s_hotkeys">Горячие клавиши</h2>
+        <div class="card">
+          <label class="row" for="hotkeys">
+            <div class="txt"><div class="t" data-i18n="s_hotkeys">Горячие клавиши</div><div class="d" data-i18n="s_hotkeys_d">Глобальные сочетания для быстрого доступа</div></div>
+            <span class="sw"><input type="checkbox" id="hotkeys" data-key="hotkeys"><span></span></span>
+          </label>
+          <div class="row">
+            <div class="txt"><div class="t" data-i18n="s_hk_toggle">Открыть / свернуть остров</div></div>
+            <button type="button" class="kbtn" data-hk="hotkey_toggle">Ctrl+Alt+I</button>
+          </div>
+          <div class="row">
+            <div class="txt"><div class="t" data-i18n="s_hk_timer">Старт помодоро / пауза</div></div>
+            <button type="button" class="kbtn" data-hk="hotkey_timer">Ctrl+Alt+T</button>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2 data-i18n="s_updates">Обновления</h2>
+        <div class="card">
+          <div class="row">
+            <div class="txt"><div class="t" data-i18n="s_upd_title">Версия на GitHub</div><div class="d" id="updStatus"></div></div>
+            <button type="button" class="actbtn" id="updBtn" data-i18n="s_upd_btn">Проверить</button>
+          </div>
+          <div class="row">
+            <div class="txt"><div class="t" data-i18n="s_reset_title">Сброс параметров</div><div class="d" data-i18n="s_reset_d">Вернуть оформление и поведение к заводским настройкам</div></div>
+            <button type="button" class="actbtn danger" id="resetBtn" data-i18n="s_reset_btn">Сбросить</button>
+          </div>
+        </div>
+      </section>
+    </div>
   </main>
 
   <footer><span data-i18n="s_footer">Значок острова — в трее</span><span id="ver"></span></footer>
 
   <script src="i18n.js"></script>
-  <script>
-    (() => {
-      const { invoke } = window.__TAURI__.core;
-      const win = window.__TAURI__.window.getCurrentWindow();
-      const I18N = window.DI_I18N;
-      const inputs = [...document.querySelectorAll('input[data-key]')];
-      const segs = [...document.querySelectorAll('[data-seg]')];
-      const hkBtns = [...document.querySelectorAll('[data-hk]')];
-      const updBtn = document.getElementById('updBtn');
-      const updStatus = document.getElementById('updStatus');
-      let cur = {};
-      let recording = null;
-      let releaseUrl = '';
-
-      function lang() { return I18N.resolveLang(cur.lang); }
-      function T(k, v) { return I18N.t(lang(), k, v); }
-
-      function applyLocale() {
-        const l = lang();
-        document.documentElement.lang = l;
-        document.title = T('s_title');
-        document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = T(el.dataset.i18n); });
-        document.getElementById('close').ariaLabel = T('close');
-      }
-
-      function fill(s) {
-        cur = s || {};
-        applyLocale();
-        for (const el of inputs) el.checked = !!s[el.dataset.key];
-        for (const seg of segs) {
-          const key = seg.dataset.seg;
-          const isNum = seg.dataset.type === 'num';
-          const val = s[key] ?? seg.dataset.default;
-          const buttons = [...seg.querySelectorAll('button')];
-          let idx = buttons.findIndex((b) => (isNum ? +b.dataset.v === +val : b.dataset.v === val));
-          if (idx < 0) idx = buttons.findIndex((b) => (isNum ? +b.dataset.v === +seg.dataset.default : b.dataset.v === seg.dataset.default));
-          if (idx < 0) idx = 0;
-          buttons.forEach((b, i) => b.setAttribute('aria-pressed', String(i === idx)));
-          seg.querySelector('.pill').style.transform = `translateX(${idx * 100}%)`;
-        }
-        for (const b of hkBtns) {
-          if (recording !== b) b.textContent = s[b.dataset.hk] || '';
-          const ok = s[b.dataset.hk + '_ok'] !== false;
-          b.classList.toggle('err', !ok && !!s.hotkeys);
-          b.title = !ok && !!s.hotkeys ? T('s_hk_busy') : '';
-        }
-        document.getElementById('ver').textContent = T('s_ver', { v: s.version || '' });
-        document.getElementById('pomoStats').textContent = T('s_pomo_fmt', {
-          t: s.pomodoros_today || 0,
-          w: s.pomodoros_week || 0,
-          s: s.pomodoros_streak || 0,
-        });
-      }
-
-      async function set(key, value) {
-        try { fill(await invoke('set_setting', { key, value })); } catch { /* оставляем как есть */ }
-      }
-
-      for (const el of inputs) el.addEventListener('change', () => set(el.dataset.key, el.checked));
-      for (const seg of segs) {
-        const key = seg.dataset.seg;
-        const isNum = seg.dataset.type === 'num';
-        seg.querySelectorAll('button').forEach((b) =>
-          b.addEventListener('click', () => set(key, isNum ? +b.dataset.v : b.dataset.v))
-        );
-      }
-
-      function keyLabel(e) {
-        if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return null;
-        const mods = [];
-        if (e.ctrlKey) mods.push('Ctrl');
-        if (e.altKey) mods.push('Alt');
-        if (e.shiftKey) mods.push('Shift');
-        if (!mods.length) return null;
-        let k = e.code;
-        if (k.startsWith('Key')) k = k.slice(3);
-        else if (k.startsWith('Digit')) k = k.slice(5);
-        else if (e.key === ' ') k = 'Space';
-        else if (e.key === 'Enter') k = 'Enter';
-        else if (e.key === 'Tab') k = 'Tab';
-        else if (/^F([1-9]|1[0-2])$/i.test(e.key)) k = e.key.toUpperCase();
-        else return null;
-        return [...mods, k].join('+');
-      }
-
-      for (const b of hkBtns) {
-        b.addEventListener('click', () => {
-          if (recording) recording.classList.remove('rec');
-          recording = b;
-          b.classList.add('rec');
-          b.textContent = T('s_hk_press');
-        });
-      }
-
-      updBtn.addEventListener('click', async () => {
-        if (releaseUrl) {
-          invoke('open_release_url', { url: releaseUrl }).catch(() => {});
-          return;
-        }
-        updBtn.disabled = true;
-        updStatus.classList.remove('err');
-        updStatus.textContent = T('s_upd_checking');
-        try {
-          const info = await invoke('check_update');
-          if (info && info.available) {
-            releaseUrl = info.url;
-            updStatus.textContent = T('s_upd_avail', { v: info.version });
-            updBtn.textContent = T('s_upd_avail', { v: info.version });
-            updBtn.classList.add('accent');
-          } else if (info && info.error) {
-            updStatus.classList.add('err');
-            updStatus.textContent = info.error === 'rate_limit' ? T('s_upd_rate') : T('s_upd_err');
-          } else {
-            updStatus.textContent = T('s_upd_latest');
-          }
-        } catch {
-          updStatus.classList.add('err');
-          updStatus.textContent = T('s_upd_err');
-        } finally {
-          updBtn.disabled = false;
-        }
-      });
-
-      document.getElementById('close').addEventListener('click', () => win.close());
-      window.addEventListener('keydown', (e) => {
-        if (recording) {
-          e.preventDefault();
-          if (e.key === 'Escape') {
-            recording.classList.remove('rec');
-            recording.textContent = cur[recording.dataset.hk] || '';
-            recording = null;
-            return;
-          }
-          const combo = keyLabel(e);
-          if (combo) {
-            const btn = recording;
-            const otherKey = btn.dataset.hk === 'hotkey_toggle' ? 'hotkey_timer' : 'hotkey_toggle';
-            if ((cur[otherKey] || '').toLowerCase() === combo.toLowerCase()) {
-              btn.classList.remove('rec');
-              btn.classList.add('err');
-              btn.textContent = cur[btn.dataset.hk] || '';
-              btn.title = T('s_hk_dup');
-              recording = null;
-              setTimeout(() => fill(cur), 1400);
-              return;
-            }
-            recording = null;
-            btn.classList.remove('rec');
-            set(btn.dataset.hk, combo);
-          }
-          return;
-        }
-        if (e.key === 'Escape') win.close();
-      });
-
-      if (window.__TAURI__.event) {
-        window.__TAURI__.event.listen('settings', () => {
-          invoke('get_settings').then(fill).catch(() => {});
-        });
-      }
-      invoke('get_settings').then(fill).catch(() => {});
-    })();
-  </script>
+  <script src="settings.js"></script>
 </body>
 </html>

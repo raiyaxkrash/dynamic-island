@@ -13,8 +13,10 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, Monitor, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use windows::core::{w, HSTRING, PCWSTR};
-use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
-use windows::Win32::System::Threading::CreateMutexW;
+use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS, WAIT_OBJECT_0};
+use windows::Win32::System::Threading::{
+    CreateEventW, CreateMutexW, OpenEventW, SetEvent, WaitForSingleObject, EVENT_MODIFY_STATE,
+};
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
@@ -326,6 +328,9 @@ fn set_setting(app: AppHandle, key: String, value: Value) -> Value {
             if let Ok(mut updated) = serde_json::from_value::<Settings>(obj) {
                 updated.sound_volume = updated.sound_volume.min(100);
                 updated.top_margin = updated.top_margin.clamp(0, 24);
+                updated.ui_scale = updated.ui_scale.clamp(85, 115);
+                updated.pomo_work_min = updated.pomo_work_min.clamp(5, 120);
+                updated.pomo_break_min = updated.pomo_break_min.clamp(1, 60);
                 if updated.monitor_mode != "cursor" {
                     updated.monitor_mode = "primary".to_string();
                 }
@@ -337,6 +342,25 @@ fn set_setting(app: AppHandle, key: String, value: Value) -> Value {
                 }
                 if !matches!(updated.border_style.as_str(), "subtle" | "glow" | "none") {
                     updated.border_style = "subtle".to_string();
+                }
+                if !matches!(updated.backdrop.as_str(), "oled" | "graphite" | "glass") {
+                    updated.backdrop = "oled".to_string();
+                }
+                if !matches!(updated.idle_style.as_str(), "pill" | "clock" | "hidden") {
+                    updated.idle_style = "pill".to_string();
+                }
+                if !matches!(updated.expand_mode.as_str(), "hover" | "click" | "hotkey") {
+                    updated.expand_mode = "hover".to_string();
+                }
+                if !matches!(updated.spring_preset.as_str(), "soft" | "normal" | "bouncy" | "snappy") {
+                    updated.spring_preset = "normal".to_string();
+                }
+                let valid_accent = updated.accent_color == "auto"
+                    || (updated.accent_color.len() == 7
+                        && updated.accent_color.starts_with('#')
+                        && updated.accent_color[1..].bytes().all(|b| b.is_ascii_hexdigit()));
+                if !valid_accent {
+                    updated.accent_color = "auto".to_string();
                 }
                 if matches!(key.as_str(), "hotkey_toggle" | "hotkey_timer")
                     && updated.hotkey_toggle.eq_ignore_ascii_case(&updated.hotkey_timer)
@@ -373,7 +397,28 @@ fn set_setting(app: AppHandle, key: String, value: Value) -> Value {
 }
 
 #[tauri::command]
-fn open_settings(app: AppHandle) {
+fn reset_settings(app: AppHandle) -> Value {
+    let defaults = Settings::default();
+    {
+        let shared = app.state::<Shared>();
+        *lock(&shared.settings) = defaults.clone();
+    }
+    settings::save(&app, &defaults);
+    if let Some(w) = app.get_webview_window("island") {
+        place(&w);
+        let _ = app.emit("screen", ());
+    }
+    sync_tray_labels(&app);
+    hotkeys::sync();
+    std::thread::sleep(std::time::Duration::from_millis(25));
+    publish_settings(&app);
+    get_settings(app.state::<Shared>())
+}
+
+static SETTINGS_OPENING: AtomicBool = AtomicBool::new(false);
+
+#[tauri::command]
+async fn open_settings(app: AppHandle) {
     show_settings(&app);
 }
 
@@ -384,15 +429,33 @@ fn show_settings(app: &AppHandle) {
         let _ = w.set_focus();
         return;
     }
-    let _ = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
-        .title("Настройки Dynamic Island")
-        .inner_size(440.0, 640.0)
-        .resizable(false)
-        .maximizable(false)
-        .decorations(false)
-        .center()
-        .background_color(tauri::window::Color(11, 11, 13, 255))
-        .build();
+    if SETTINGS_OPENING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return;
+    }
+    // На Windows создание WebviewWindow обязательно выполняется вне главного UI-потока,
+    // иначе CreateCoreWebView2Controller блокирует очередь сообщений (серый экран и зависание).
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        let built = WebviewWindowBuilder::new(&handle, "settings", WebviewUrl::App("settings.html".into()))
+            .title("Настройки Dynamic Island")
+            .inner_size(468.0, 660.0)
+            .resizable(false)
+            .maximizable(false)
+            .decorations(false)
+            .center()
+            .visible(false)
+            .background_color(tauri::window::Color(11, 11, 13, 255))
+            .build();
+        SETTINGS_OPENING.store(false, Ordering::SeqCst);
+        if let Ok(w) = built {
+            std::thread::sleep(std::time::Duration::from_millis(160));
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+    });
 }
 
 /// Ставит окно у верхнего края указанного монитора с учётом выравнивания (`left`/`center`/`right`) и верхней панели задач.
@@ -483,11 +546,17 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Вторая копия острова не нужна: если он уже запущен, тихо выходим.
+/// Вторая копия острова не нужна: если он уже запущен, будим окно настроек у первой копии и выходим.
 fn already_running() -> bool {
     unsafe {
         let _ = CreateMutexW(None, true, w!("Local\\DynamicIsland.SingleInstance"));
-        GetLastError() == ERROR_ALREADY_EXISTS
+        if GetLastError() == ERROR_ALREADY_EXISTS {
+            if let Ok(ev) = OpenEventW(EVENT_MODIFY_STATE, false, w!("Local\\DynamicIsland.WakeSettings")) {
+                let _ = SetEvent(ev);
+            }
+            return true;
+        }
+        false
     }
 }
 
@@ -510,6 +579,7 @@ pub fn run() {
             pomodoro_done,
             get_settings,
             set_setting,
+            reset_settings,
             open_settings,
             open_privacy_settings,
             open_sound_settings,
@@ -593,6 +663,20 @@ pub fn run() {
             keyboard::spawn(handle.clone());
             clipboard::spawn(handle.clone());
             hotkeys::spawn(handle.clone());
+
+            // Повторный запуск ярлыка Dynamic Island открывает окно настроек у живого процесса.
+            let wake_handle = handle.clone();
+            std::thread::spawn(move || unsafe {
+                if let Ok(ev) = CreateEventW(None, false, false, w!("Local\\DynamicIsland.WakeSettings")) {
+                    loop {
+                        if WaitForSingleObject(ev, u32::MAX) == WAIT_OBJECT_0 {
+                            show_settings(&wake_handle);
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            });
 
             // Тихая проверка новой версии на GitHub через 10 секунд после старта.
             std::thread::spawn(move || {

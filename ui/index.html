@@ -15,6 +15,9 @@
     <!-- над развёрнутым окном: тонкая полоска, чтобы не закрывать вкладки -->
     <div class="view v-sliver" data-view="sliver"><span class="line"></span></div>
 
+    <!-- покой: чистая пилюля или мини-часы -->
+    <div class="view v-idle" data-view="idle"><span class="idle-clk" data-live="time">00:00</span></div>
+
     <!-- музыка, свёрнуто -->
     <div class="view v-mini" data-view="mini">
       <div class="art art-s"></div>
@@ -76,7 +79,7 @@
         <div class="presets" id="presets">
           <button type="button" data-t="5" data-i18n-min="5">5 мин</button>
           <button type="button" data-t="15" data-i18n-min="15">15 мин</button>
-          <button type="button" data-t="25" data-kind="work" class="pomo" data-i18n="pomodoro_25">Помодоро 25</button>
+          <button type="button" data-t="25" data-kind="work" class="pomo" id="pomoPresetBtn">Помодоро 25</button>
           <button type="button" class="tcustom-btn" id="tCustomBtn" data-a="tcustom-open" aria-label="Свой таймер" title="Свой таймер">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="7.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 9.5V13l2.4 1.6M9.5 3.5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
           </button>

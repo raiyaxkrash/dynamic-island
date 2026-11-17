@@ -127,6 +127,7 @@ pub fn spawn(app: AppHandle) {
         let mut screen: Option<(i32, i32, u32, u32, i32, f64)> = None;
         let mut was_lmb = false;
         let mut dragging_from_outside = false;
+        let mut drag_dwell_ticks: u8 = 0;
         loop {
             let sleep_ms = if full { 200 } else { 25 };
             std::thread::sleep(Duration::from_millis(sleep_ms));
@@ -203,26 +204,32 @@ pub fn spawn(app: AppHandle) {
             let (px, py) = (p.x as f64, p.y as f64);
             let now = !full && r[2] > 0.0 && px >= x0 && px <= x1 && py >= y0 && py <= y1;
 
-            // Широкая приёмная зона вокруг острова для плавного перетаскивания файлов из Проводника,
-            // даже когда остров сжат в 5-пиксельную полоску над развёрнутым окном.
-            let drop_cx = pos.x as f64 + 274.0 * scale;
-            let in_drop_zone = !full
-                && (px - drop_cx).abs() <= 135.0 * scale
-                && py >= pos.y as f64
-                && py <= pos.y as f64 + 48.0 * scale;
+            // Приём файлов перетаскиванием включается строго в границах самой пилюли (`now`)
+            // и только если курсор с зажатой извне ЛКМ задержался на ней ~175 мс — так перетаскивание
+            // вкладок браузера или заголовков окон никогда не цепляется за свёрнутый остров.
             let lmb = unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) } < 0;
             if !lmb {
                 dragging_from_outside = false;
-            } else if !was_lmb && !in_drop_zone {
-                dragging_from_outside = true;
+                drag_dwell_ticks = 0;
+            } else {
+                if !was_lmb && !now {
+                    dragging_from_outside = true;
+                    drag_dwell_ticks = 0;
+                }
+                if dragging_from_outside && now {
+                    drag_dwell_ticks = drag_dwell_ticks.saturating_add(1);
+                } else {
+                    drag_dwell_ticks = 0;
+                }
             }
             was_lmb = lmb;
+            let drag_ready = dragging_from_outside && now && drag_dwell_ticks >= 7;
 
             if now != inside {
                 inside = now;
                 let _ = app.emit("hover", now);
             }
-            let want = (inside && interactive) || (dragging_from_outside && in_drop_zone);
+            let want = (inside && interactive) || drag_ready;
             if want != capture {
                 capture = want;
                 let _ = win.set_ignore_cursor_events(!want);

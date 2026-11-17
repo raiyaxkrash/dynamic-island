@@ -36,6 +36,7 @@ button { font: inherit; color: inherit; }
   width: 124px;
   height: 30px;
   border-radius: 15px;
+  transform-origin: 50% 0%;
   transform: translateX(-50%);
   background: #000;
   overflow: hidden;
@@ -44,9 +45,14 @@ button { font: inherit; color: inherit; }
   box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.09);
   transition: opacity 0.35s var(--ease);
 }
+.island[data-backdrop="graphite"] { background: #14161f; }
+.island[data-backdrop="glass"] { background: rgba(14, 17, 26, 0.78); backdrop-filter: blur(20px) saturate(160%); }
 .island[data-border="none"] { box-shadow: none; }
 .island[data-border="glow"] { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, rgba(255, 255, 255, 0.14)), 0 4px 16px -4px color-mix(in srgb, var(--accent) 30%, transparent); }
-.island[data-mode="hidden"] { opacity: 0; }
+.island[data-mode="hidden"], .island.stealth { opacity: 0; }
+.v-idle { justify-content: center; }
+.idle-clk { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: 0.01em; color: rgba(245, 245, 247, 0.9); opacity: 0; transition: opacity 0.25s ease; }
+.island[data-idle="clock"] .idle-clk { opacity: 1; }
 
 /* ---------- экраны ----------
    Каждый экран сразу своего размера и стоит по центру. Новый экран включается, когда остров
@@ -66,6 +72,7 @@ button { font: inherit; color: inherit; }
 }
 .view.on {
   opacity: 1;
+  transform-origin: 50% 0%;
   transform: translateX(-50%);
   pointer-events: auto;
   transition: opacity 0.3s var(--ease), transform 0.45s var(--ease);

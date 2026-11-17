@@ -56,6 +56,26 @@ pub struct Settings {
     pub quiet_pomo: bool,
     /// Ручной «Тихий режим» (🌙), сохраняемый между перезапусками.
     pub dnd: bool,
+    /// Акцентный цвет: `"auto"` (из обложки) или hex (`"#0a84ff"`, `"#bf5af2"`, и т.д.).
+    pub accent_color: String,
+    /// Материал фона острова: `"oled"`, `"graphite"` или `"glass"`.
+    pub backdrop: String,
+    /// Масштаб острова в процентах (`90`, `100`, `110`).
+    pub ui_scale: u8,
+    /// Вид свёрнутого острова в покое: `"pill"`, `"clock"` или `"hidden"`.
+    pub idle_style: String,
+    /// Способ раскрытия: `"hover"`, `"click"` или `"hotkey"`.
+    pub expand_mode: String,
+    /// Характер пружины: `"soft"`, `"normal"`, `"bouncy"` или `"snappy"`.
+    pub spring_preset: String,
+    /// 24-часовой формат времени (`true` = `14:30`, `false` = `2:30 PM`).
+    pub clock_24h: bool,
+    /// Показывать секунды на часах.
+    pub clock_seconds: bool,
+    /// Длительность рабочей сессии помодоро (мин).
+    pub pomo_work_min: u16,
+    /// Длительность перерыва помодоро (мин).
+    pub pomo_break_min: u16,
 }
 
 impl Settings {
@@ -95,6 +115,16 @@ impl Default for Settings {
             border_style: "subtle".to_string(),
             quiet_pomo: false,
             dnd: false,
+            accent_color: "auto".to_string(),
+            backdrop: "oled".to_string(),
+            ui_scale: 100,
+            idle_style: "pill".to_string(),
+            expand_mode: "hover".to_string(),
+            spring_preset: "normal".to_string(),
+            clock_24h: true,
+            clock_seconds: false,
+            pomo_work_min: 25,
+            pomo_break_min: 5,
         }
     }
 }

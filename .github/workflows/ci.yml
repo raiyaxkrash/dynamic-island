@@ -21,5 +21,6 @@ jobs:
       - run: npm ci
       - run: node --check ui/island.js
       - run: node --check ui/i18n.js
+      - run: node --check ui/settings.js
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: npm run build

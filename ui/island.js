@@ -91,6 +91,15 @@
   // Размер и форму ведёт затухающая пружина. Если цель меняется посреди движения, остров
   // спокойно поворачивает к новой цели, сохраняя скорость, без рывков.
   // 280/28: почти без перелёта, успокаивается за ~0,45 с — аккуратно, без «прыжков».
+  const SPRING_PRESETS = {
+    soft: [190, 26],
+    normal: [280, 28],
+    bouncy: [340, 19],
+    snappy: [460, 38],
+  };
+  const uiScale = () => Math.min(1.15, Math.max(0.85, (st.settings.ui_scale || 100) / 100));
+  const pomoWorkMin = () => st.settings.pomo_work_min || 25;
+  const pomoBreakMin = () => st.settings.pomo_break_min || 5;
   const spring = (v, k = 280, c = 28) => ({ v, t: v, vel: 0, k, c, from: v });
   const S = {
     w: spring(124),
@@ -137,14 +146,17 @@
     const h = Math.max(0, S.h.v);
     const r = Math.min(Math.max(0, S.r.v), h / 2);
     const rt = Math.min(Math.max(0, S.rt.v), h / 2);
+    const sc = uiScale();
     const s = island.style;
     s.width = w.toFixed(2) + 'px';
     s.height = h.toFixed(2) + 'px';
     s.top = S.top.v.toFixed(2) + 'px';
     s.borderRadius = `${rt.toFixed(2)}px ${rt.toFixed(2)}px ${r.toFixed(2)}px ${r.toFixed(2)}px`;
-    s.transform = `translateX(calc(-50% + ${S.x.v.toFixed(2)}px))`;
-    const dotY = Math.max(4, S.top.v + h / 2 - 3);
-    pdots.style.transform = `translate(${(w / 2 + 8 + S.x.v).toFixed(2)}px, ${dotY.toFixed(2)}px)`;
+    s.transform = sc === 1
+      ? `translateX(calc(-50% + ${S.x.v.toFixed(2)}px))`
+      : `translateX(calc(-50% + ${S.x.v.toFixed(2)}px)) scale(${sc})`;
+    const dotY = Math.max(4, S.top.v + (h * sc) / 2 - 3);
+    pdots.style.transform = `translate(${((w * sc) / 2 + 8 + S.x.v).toFixed(2)}px, ${dotY.toFixed(2)}px)`;
   }
   function setTargets(w, h, r, rt, top) {
     for (const [s, t] of [[S.w, w], [S.h, h], [S.r, r], [S.rt, rt], [S.top, top]]) {
@@ -208,6 +220,7 @@
     return maxH ? Math.min(h, maxH) : h;
   }
   function sizeOf(m) {
+    if (m === 'idle') return [st.settings.idle_style === 'clock' && st.settings.clock_seconds ? 140 : 124, 30, 15];
     if (m === 'home') return [480, measureHeight($$home), 30];
     if (m === 'audio') return [340, measureHeight(document.querySelector('[data-view="audio"]'), 172), 26];
     if (m === 'shelf') return [392, measureHeight(document.querySelector('[data-view="shelf"]'), 172), 28];
@@ -251,23 +264,37 @@
     island.classList.toggle('drag-over', !!st.dragHover);
     mediaRestore.hidden = !(st.media.active && (st.mediaHidden || st.preferHome));
     const [w, h, r] = sizeOf(m);
-    if (m === 'home' || m === 'audio' || m === 'shelf' || m === 'clips') {
+    if (m === 'idle' || m === 'home' || m === 'audio' || m === 'shelf' || m === 'clips') {
       const viewEl = document.querySelector(`[data-view="${m}"]`);
-      viewEl.style.width = w + 'px';
-      viewEl.style.height = h + 'px';
+      if (viewEl) {
+        viewEl.style.width = w + 'px';
+        viewEl.style.height = h + 'px';
+      }
     }
     const sliver = v === 'sliver';
     const top = topMargin();
+    island.dataset.idle = st.settings.idle_style || 'pill';
+    island.classList.toggle('stealth', m === 'idle' && st.settings.idle_style === 'hidden' && !st.pending);
     setTargets(w, h, r, sliver ? 0 : r, sliver ? 0 : top);
     requestView(v);
 
-    // Мышь остров ловит, когда раскрыт, ждёт ответа («таймер закончился») или
-    // включена опция колёсика над свёрнутым островом при свободном верхе экрана.
+    // Зона попадания курсора: в свёрнутом состоянии строго по контуру самой пилюли (без лишних полей).
+    const sc = uiScale();
+    const sw = w * sc;
+    const sh = h * sc;
+    const expMode = st.settings.expand_mode || 'hover';
     const interactive = st.hover || st.pinned || st.dragHover || m === 'done';
+    const clickTrigger = !interactive && expMode === 'click' && !st.topbusy && (m === 'idle' || m === 'mini' || m === 'tmini') && st.settings.idle_style !== 'hidden';
     const wheelOnly = !interactive && !!st.settings.wheel_collapsed && !st.topbusy && (m === 'idle' || m === 'mini' || m === 'tmini');
-    if (m === 'hidden') sendRect(0, 0, 0, 0, false);
-    else if (sliver) sendRect((innerWidth - w) / 2 - 12, 0, w + 24, 14, false);
-    else sendRect((innerWidth - w) / 2 - 4, 0, w + 8, h + top + 4, interactive || wheelOnly);
+    if (m === 'hidden' || (!interactive && expMode === 'hotkey')) {
+      sendRect(0, 0, 0, 0, false);
+    } else if (sliver) {
+      sendRect((innerWidth - 96 * sc) / 2, 0, 96 * sc, 6, false);
+    } else if (!interactive) {
+      sendRect((innerWidth - sw) / 2, top, sw, sh, wheelOnly || clickTrigger);
+    } else {
+      sendRect((innerWidth - sw) / 2 - 2, Math.max(0, top - 2), sw + 4, sh + 4, true);
+    }
     live();
   }
 
@@ -311,7 +338,13 @@
   function live() {
     const d = new Date();
     const lang = L();
-    setLive('time', `${pad(d.getHours())}:${pad(d.getMinutes())}`);
+    const use24 = st.settings.clock_24h !== false;
+    const rawH = d.getHours();
+    const hStr = use24 ? pad(rawH) : String(rawH % 12 || 12);
+    const secStr = st.settings.clock_seconds ? `:${pad(d.getSeconds())}` : '';
+    const timeEl = document.querySelector('.v-home .time');
+    if (timeEl) timeEl.style.fontSize = st.settings.clock_seconds ? '20px' : '';
+    setLive('time', `${hStr}:${pad(d.getMinutes())}${secStr}`);
     const date = d.toLocaleDateString(lang === 'en' ? 'en-US' : 'ru-RU', { weekday: 'short', day: 'numeric', month: 'short' });
     setLive('date', st.pomodoros ? `${date} · 🍅 ${st.pomodoros}` : date);
 
@@ -382,6 +415,12 @@
   function setCustomMin(next) {
     customMin = Math.min(180, Math.max(1, next));
     $('tCustomVal').textContent = T('min_short', { n: customMin });
+    const pomoBtn = $('pomoPresetBtn');
+    if (pomoBtn) {
+      const wm = pomoWorkMin();
+      pomoBtn.dataset.t = String(wm);
+      pomoBtn.textContent = T('pomodoro_n', { n: wm });
+    }
   }
   function pauseTimer() {
     if (timer.paused) { timer.end = Date.now() + timer.rest * 1000; timer.paused = false; }
@@ -409,7 +448,7 @@
     const btn = $('doneBreak');
     if (kind === 'work') {
       btn.hidden = false;
-      btn.textContent = T('break_5');
+      btn.textContent = T('break_n', { n: pomoBreakMin() });
       btn.dataset.nextKind = 'break';
     } else if (kind === 'break') {
       btn.hidden = false;
@@ -452,6 +491,12 @@
   let trackKey = '';
   let artSrc = null;
   let artTimer = null;
+  let autoAccent = '#8fd6ff';
+
+  function syncAccent() {
+    const custom = st.settings.accent_color;
+    island.style.setProperty('--accent', custom && custom !== 'auto' ? custom : autoAccent);
+  }
 
   function tickProgress() {
     if (seeking) return;
@@ -486,7 +531,7 @@
       artTimer = setTimeout(apply, 200);
     }
     if (src) accentFrom(src);
-    else island.style.setProperty('--accent', '#8fd6ff');
+    else { autoAccent = '#8fd6ff'; syncAccent(); }
   }
 
   // Цвет эквалайзера берём из обложки: самый насыщенный оттенок, приведённый к яркому.
@@ -505,9 +550,10 @@
         const s = mx - Math.min(d[i], d[i + 1], d[i + 2]);
         if (s > 30 && mx > 50) { r += d[i] * s; g += d[i + 1] * s; b += d[i + 2] * s; n += s; }
       }
-      if (!n) { island.style.setProperty('--accent', '#f5f5f7'); return; }
+      if (!n) { autoAccent = '#f5f5f7'; syncAccent(); return; }
       const [h, sat] = rgbToHs(r / n, g / n, b / n);
-      island.style.setProperty('--accent', `hsl(${h} ${Math.max(sat, 50)}% 66%)`);
+      autoAccent = `hsl(${h} ${Math.max(sat, 50)}% 66%)`;
+      syncAccent();
     };
     img.src = src;
   }
@@ -570,6 +616,11 @@
 
   // ---------- клики и жесты ----------
   island.addEventListener('click', (e) => {
+    if (!st.hover && !st.pinned && island.dataset.mode !== 'done' && (st.settings.expand_mode === 'click')) {
+      st.hover = true;
+      render();
+      return;
+    }
     const t = e.target.closest('[data-t]');
     if (t) { startTimer(+t.dataset.t, t.dataset.kind); return; }
     const b = e.target.closest('[data-a]');
@@ -585,7 +636,7 @@
     else if (a === 'tcustom-start') startTimer(customMin, 'plain');
     else if (a === 'break') {
       clearHud();
-      const next = b.dataset.nextKind === 'work' ? [25, 'work'] : [5, 'break'];
+      const next = b.dataset.nextKind === 'work' ? [pomoWorkMin(), 'work'] : [pomoBreakMin(), 'break'];
       startTimer(next[0], next[1]);
     }
     else if (a === 'dismiss') clearHud();
@@ -793,6 +844,12 @@
     document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = T(el.dataset.i18n); });
     document.querySelectorAll('[data-i18n-min]').forEach((el) => { el.textContent = T('min_short', { n: el.dataset.i18nMin }); });
     $('tCustomVal').textContent = T('min_short', { n: customMin });
+    const pomoBtn = $('pomoPresetBtn');
+    if (pomoBtn) {
+      const wm = pomoWorkMin();
+      pomoBtn.dataset.t = String(wm);
+      pomoBtn.textContent = T('pomodoro_n', { n: wm });
+    }
     $('tCustomBtn').title = $('tCustomBtn').ariaLabel = T('custom_timer');
     $('tCustomVal').title = T('custom_hint');
     $('privLine').title = T('privacy_tip');
@@ -830,11 +887,20 @@
       st.dnd = st.settings.dnd;
       $('dndBtn').classList.toggle('on', st.dnd);
     }
+    const [sk, sc] = SPRING_PRESETS[st.settings.spring_preset] || SPRING_PRESETS.normal;
+    for (const key of ['w', 'h', 'r', 'rt', 'top']) {
+      S[key].k = sk;
+      S[key].c = sc;
+    }
     island.dataset.border = st.settings.border_style || 'subtle';
+    island.dataset.backdrop = st.settings.backdrop || 'oled';
+    syncAccent();
     $('sysRow').hidden = st.settings.sysload === false;
     if (st.device) $('devChip').hidden = st.settings.devices === false;
     $('clipsBtn').hidden = st.settings.clipboard === false || st.clips.length === 0;
+    lastRect = '';
     applyLocale();
+    paint();
     render();
     document.body.classList.toggle('no-motion', reduceMotion);
   }
@@ -1095,6 +1161,7 @@
     clearTimeout(hoverTimer);
     if (on) {
       if (st.hover || st.pinned) { st.hover = true; return; }
+      if ((st.settings.expand_mode || 'hover') !== 'hover') return;
       st.pending = true;
       render();
       hoverTimer = setTimeout(() => { st.pending = false; st.hover = true; render(); }, st.topbusy ? DWELL.busy : DWELL.normal);
@@ -1125,7 +1192,7 @@
       render();
     } else if (kind === 'timer') {
       if (timer.running()) pauseTimer();
-      else startTimer(25, 'work');
+      else startTimer(pomoWorkMin(), 'work');
     }
   }
   listen('hover', (e) => onHover(!!e.payload));
