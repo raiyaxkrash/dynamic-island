@@ -5,8 +5,8 @@ use serde_json::Value;
 use windows::core::{w, HSTRING, PCWSTR};
 use windows::Win32::Networking::WinHttp::{
     WinHttpCloseHandle, WinHttpConnect, WinHttpOpen, WinHttpOpenRequest, WinHttpQueryDataAvailable,
-    WinHttpReadData, WinHttpReceiveResponse, WinHttpSendRequest, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-    WINHTTP_FLAG_SECURE,
+    WinHttpReadData, WinHttpReceiveResponse, WinHttpSendRequest, WinHttpSetTimeouts,
+    WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_FLAG_SECURE,
 };
 
 const REPO_HOST: &str = "api.github.com";
@@ -61,6 +61,7 @@ fn fetch_latest_json() -> Option<String> {
         if session.is_null() {
             return None;
         }
+        let _ = WinHttpSetTimeouts(session, 4000, 4000, 5000, 5000);
         let host = HSTRING::from(REPO_HOST);
         let conn = WinHttpConnect(session, PCWSTR(host.as_ptr()), 443, 0);
         if conn.is_null() {

@@ -1,29 +1,53 @@
-//! Полка для файлов (File Shelf) с нативным перетаскиванием наружу через OLE `DoDragDrop`.
-//!
-//! Пользователь может перетащить файлы в раскрытый остров, чтобы временно сохранить их под рукой,
-//! а затем перетянуть обратно в Проводник, браузер или мессенджер.
+//! Полка для файлов (File Shelf) с сохранением между перезапусками, добавлением из буфера,
+//! показом в Проводнике (`SHOpenFolderAndSelectItems`) и нативным перетаскиванием (`DoDragDrop`).
 
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
-use windows::core::{implement, BOOL, HSTRING, HRESULT, PCWSTR};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Manager};
+use windows::core::{implement, BOOL, HRESULT, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, DRAGDROP_S_USEDEFAULTCURSORS, S_OK};
-use windows::Win32::System::Com::IDataObject;
+use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, IDataObject, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::Ole::{
     DoDragDrop, IDropSource, IDropSource_Impl, OleInitialize, OleUninitialize, DROPEFFECT,
     DROPEFFECT_COPY, DROPEFFECT_LINK,
 };
 use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
 use windows::Win32::UI::Shell::Common::ITEMIDLIST;
-use windows::Win32::UI::Shell::{ILCreateFromPathW, ILFree, SHCreateDataObject};
+use windows::Win32::UI::Shell::{ILCreateFromPathW, ILFree, SHCreateDataObject, SHOpenFolderAndSelectItems};
 
 const MAX_ITEMS: usize = 8;
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ShelfItem {
     pub path: String,
     pub name: String,
     pub is_dir: bool,
+}
+
+fn shelf_path(app: &AppHandle) -> Option<PathBuf> {
+    app.path().app_config_dir().ok().map(|d| d.join("shelf.json"))
+}
+
+pub fn load(app: &AppHandle) -> Vec<ShelfItem> {
+    let items: Vec<ShelfItem> = shelf_path(app)
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    items
+        .into_iter()
+        .filter(|x| Path::new(&x.path).exists())
+        .take(MAX_ITEMS)
+        .collect()
+}
+
+pub fn save(app: &AppHandle, items: &[ShelfItem]) {
+    if let Some(p) = shelf_path(app) {
+        if let Some(dir) = p.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let _ = std::fs::write(p, serde_json::to_string(items).unwrap_or_default());
+    }
 }
 
 pub fn add_paths(shelf: &mut Vec<ShelfItem>, paths: Vec<PathBuf>) -> bool {
@@ -55,6 +79,25 @@ pub fn add_paths(shelf: &mut Vec<ShelfItem>, paths: Vec<PathBuf>) -> bool {
     changed
 }
 
+/// Открывает Проводник и выделяет указанный файл или папку.
+pub fn reveal_in_explorer(path: String) {
+    if !Path::new(&path).exists() {
+        return;
+    }
+    std::thread::spawn(move || unsafe {
+        let com_ok = CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_ok();
+        let wide = HSTRING::from(path.as_str());
+        let pidl: *mut ITEMIDLIST = ILCreateFromPathW(PCWSTR(wide.as_ptr()));
+        if !pidl.is_null() {
+            let _ = SHOpenFolderAndSelectItems(pidl as *const ITEMIDLIST, None, 0);
+            ILFree(Some(pidl as *const ITEMIDLIST));
+        }
+        if com_ok {
+            CoUninitialize();
+        }
+    });
+}
+
 #[implement(IDropSource)]
 struct DropSource;
 
@@ -63,7 +106,6 @@ impl IDropSource_Impl for DropSource_Impl {
         if fescapepressed.as_bool() {
             return DRAGDROP_S_CANCEL;
         }
-        // MK_LBUTTON = 1: когда кнопка мыши отпущена — завершаем drop.
         if (grfkeystate.0 & 1) == 0 {
             return DRAGDROP_S_DROP;
         }

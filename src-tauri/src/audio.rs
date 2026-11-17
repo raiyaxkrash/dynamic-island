@@ -291,6 +291,22 @@ pub fn step(delta: f32) {
     let _ = tx.send(delta);
 }
 
+/// Переключает системный Mute (вкл/выкл).
+pub fn toggle_mute() {
+    std::thread::spawn(|| unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        if let Ok(en) = enumerator() {
+            if let Ok(dev) = default_device(&en) {
+                if let Ok(e) = dev.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None) {
+                    if let Ok(m) = e.GetMute() {
+                        let _ = e.SetMute(!m.as_bool(), std::ptr::null());
+                    }
+                }
+            }
+        }
+    });
+}
+
 #[derive(Serialize, Clone, Debug)]
 pub struct AudioDeviceInfo {
     pub id: String,

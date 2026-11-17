@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 use windows::core::{w, HSTRING, PCWSTR};
+use windows::Win32::Globalization::GetUserDefaultUILanguage;
 use windows::Win32::System::Registry::{
     RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ,
 };
@@ -49,6 +50,23 @@ pub struct Settings {
     pub hotkey_toggle: String,
     /// Сочетание клавиш для запуска/паузы таймера.
     pub hotkey_timer: String,
+    /// Стиль обводки острова: `"subtle"`, `"glow"` или `"none"`.
+    pub border_style: String,
+    /// Не показывать второстепенные уведомления во время активного помодоро.
+    pub quiet_pomo: bool,
+}
+
+impl Settings {
+    pub fn effective_lang(&self) -> &'static str {
+        match self.lang.as_str() {
+            "ru" => "ru",
+            "en" => "en",
+            _ => {
+                let primary = unsafe { GetUserDefaultUILanguage() } & 0x3ff;
+                if primary == 0x19 { "ru" } else { "en" }
+            }
+        }
+    }
 }
 
 impl Default for Settings {
@@ -72,6 +90,8 @@ impl Default for Settings {
             top_margin: 6,
             hotkey_toggle: "Ctrl+Alt+I".to_string(),
             hotkey_timer: "Ctrl+Alt+T".to_string(),
+            border_style: "subtle".to_string(),
+            quiet_pomo: false,
         }
     }
 }

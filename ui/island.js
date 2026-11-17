@@ -24,10 +24,11 @@
     idle: [124, 30, 15],
     mini: [206, 32, 16],
     tmini: [150, 32, 16],
-    home: [416, 116, 30],
+    home: [456, 116, 30],
     music: [392, 166, 38],
     audio: [340, 120, 26],
     shelf: [392, 132, 28],
+    clips: [392, 132, 28],
     peek: [330, 54, 27],
     volume: [290, 36, 18],
     charge: [290, 36, 18],
@@ -66,6 +67,9 @@
     hud: null,
     device: null,
     shelf: [],
+    clips: [],
+    update: null,
+    dnd: false,
     full: false,
     topbusy: false,
     privacy: { mic: [], cam: [] },
@@ -203,9 +207,10 @@
     return maxH ? Math.min(h, maxH) : h;
   }
   function sizeOf(m) {
-    if (m === 'home') return [416, measureHeight($$home), 30];
+    if (m === 'home') return [456, measureHeight($$home), 30];
     if (m === 'audio') return [340, measureHeight(document.querySelector('[data-view="audio"]'), 172), 26];
     if (m === 'shelf') return [392, measureHeight(document.querySelector('[data-view="shelf"]'), 172), 28];
+    if (m === 'clips') return [392, measureHeight(document.querySelector('[data-view="clips"]'), 172), 28];
     return SIZE[m];
   }
 
@@ -245,7 +250,7 @@
     island.classList.toggle('drag-over', !!st.dragHover);
     mediaRestore.hidden = !st.mediaHidden;
     const [w, h, r] = sizeOf(m);
-    if (m === 'home' || m === 'audio' || m === 'shelf') {
+    if (m === 'home' || m === 'audio' || m === 'shelf' || m === 'clips') {
       const viewEl = document.querySelector(`[data-view="${m}"]`);
       viewEl.style.width = w + 'px';
       viewEl.style.height = h + 'px';
@@ -273,7 +278,11 @@
   }
 
   const HUD_PRIO = { done: 100, low: 80, device: 60, charge: 60, peek: 40, volume: 30, clip: 20, layout: 10, caps: 10 };
+  function isQuiet() {
+    return st.dnd || (!!st.settings.quiet_pomo && timer.running() && !timer.paused && timer.kind === 'work');
+  }
   function setHud(type, ms, force) {
+    if (!force && isQuiet() && (HUD_PRIO[type] || 0) < 50) return;
     if (st.hud && (HUD_PRIO[type] || 0) < (HUD_PRIO[st.hud.type] || 0)) return;
     st.hud = { type, force: !!force };
     clearTimeout(hudTimer);
@@ -339,6 +348,26 @@
     running() { return this.total > 0; },
     left() { return this.paused ? this.rest : Math.max(0, (this.end - Date.now()) / 1000); },
   };
+  const TIMER_KEY = 'di_timer_v1';
+  function saveTimer() {
+    try {
+      if (!timer.running()) localStorage.removeItem(TIMER_KEY);
+      else localStorage.setItem(TIMER_KEY, JSON.stringify({
+        total: timer.total, end: timer.end, rest: timer.rest,
+        paused: timer.paused, min: timer.min, kind: timer.kind,
+      }));
+    } catch { /* ignore */ }
+  }
+  function restoreTimer() {
+    try {
+      const raw = localStorage.getItem(TIMER_KEY);
+      if (!raw) return;
+      const t = JSON.parse(raw);
+      if (!t || !t.total) return;
+      if (!t.paused && t.end <= Date.now()) { localStorage.removeItem(TIMER_KEY); return; }
+      Object.assign(timer, t);
+    } catch { /* ignore */ }
+  }
   function startTimer(min, kind) {
     customOpen = false;
     timer.total = min * 60;
@@ -346,6 +375,7 @@
     timer.end = Date.now() + timer.total * 1000;
     timer.paused = false;
     timer.kind = kind || 'plain';
+    saveTimer();
     render();
   }
   function setCustomMin(next) {
@@ -355,6 +385,7 @@
   function pauseTimer() {
     if (timer.paused) { timer.end = Date.now() + timer.rest * 1000; timer.paused = false; }
     else { timer.rest = timer.left(); timer.paused = true; }
+    saveTimer();
     render();
   }
   function addMinute() {
@@ -363,13 +394,15 @@
     timer.min = Math.round(timer.total / 60);
     if (timer.paused) timer.rest += 60;
     else timer.end += 60000;
+    saveTimer();
     live();
   }
-  function stopTimer() { timer.total = 0; render(); }
+  function stopTimer() { timer.total = 0; saveTimer(); render(); }
   function finishTimer() {
     const kind = timer.kind;
     const min = Math.round(timer.total / 60);
     timer.total = 0;
+    saveTimer();
     $('doneTitle').textContent = kind === 'work' ? T('pomo_done') : kind === 'break' ? T('break_done') : T('time_up');
     $('doneSub').textContent = kind === 'work' ? T('time_to_rest') : kind === 'break' ? T('back_to_work') : T('elapsed_min', { n: min });
     const btn = $('doneBreak');
@@ -560,12 +593,33 @@
     else if (a === 'sound-settings') invoke('open_sound_settings').catch(() => {});
     else if (a === 'open-audio') openAudioPanel();
     else if (a === 'open-shelf') { st.subview = 'shelf'; render(); }
+    else if (a === 'open-clips') { st.subview = 'clips'; render(); }
     else if (a === 'panel-back') { st.subview = null; render(); }
+    else if (a === 'mute-toggle') invoke('volume_mute_toggle').catch(() => {});
+    else if (a === 'toggle-dnd') {
+      st.dnd = !st.dnd;
+      $('dndBtn').classList.toggle('on', st.dnd);
+    }
+    else if (a === 'open-update') {
+      if (st.update && st.update.url) invoke('open_release_url', { url: st.update.url }).catch(() => {});
+    }
     else if (a === 'set-audio-dev') {
       invoke('set_audio_device', { id: b.dataset.id }).then(() => { st.subview = null; render(); }).catch(() => {});
     }
+    else if (a === 'shelf-paste') invoke('shelf_from_clipboard').catch(() => {});
     else if (a === 'shelf-clear') invoke('shelf_clear').catch(() => {});
     else if (a === 'shelf-remove') invoke('shelf_remove', { path: b.dataset.path }).catch(() => {});
+    else if (a === 'clips-clear') invoke('clips_clear').catch(() => {});
+    else if (a === 'clip-pick') {
+      const idx = +b.dataset.idx;
+      const txt = st.clips[idx];
+      if (txt) {
+        invoke('clip_copy', { text: txt }).then(() => {
+          const chk = b.querySelector('.adev-chk');
+          if (chk) { chk.textContent = '✓'; setTimeout(() => { chk.textContent = ''; }, 900); }
+        }).catch(() => {});
+      }
+    }
     else if (a === 'cycle-media') invoke('media_cycle').catch(() => {});
     else if (a === 'hide-media' || a === 'show-media') {
       st.mediaHidden = a === 'hide-media';
@@ -577,9 +631,15 @@
     e.stopPropagation();
     setCustomMin(customMin + (e.deltaY < 0 ? 1 : -1));
   }, { passive: true });
-  // двойной клик по обложке или названию: пауза
+  // двойной клик по обложке или названию: пауза; средняя кнопка по острову: Mute
   $('mTop').addEventListener('dblclick', (e) => {
     if (!e.target.closest('button')) media('toggle');
+  });
+  island.addEventListener('auxclick', (e) => {
+    if (e.button === 1) {
+      e.preventDefault();
+      invoke('volume_mute_toggle').catch(() => {});
+    }
   });
 
   // Колёсико — громкость. Горизонтальный свайп двумя пальцами по тачпаду — переключение трека.
@@ -623,6 +683,15 @@
     document.querySelectorAll('.bfill').forEach((el) => el.setAttribute('width', fillW));
     $('chPct').textContent = p.percent + '%';
     $('lowPct').textContent = p.percent + '%';
+    let tip = p.ac ? T('batt_charging', { p: p.percent }) : (p.percent + '%');
+    if (!p.ac && typeof p.secsLeft === 'number' && p.secsLeft > 60) {
+      const hm = p.secsLeft >= 3600
+        ? `${Math.floor(p.secsLeft / 3600)}h ${Math.round((p.secsLeft % 3600) / 60)}m`
+        : `${Math.round(p.secsLeft / 60)}m`;
+      tip = T('batt_left', { p: p.percent, t: hm });
+    }
+    if (p.saver) tip += ` · ${T('batt_saver')}`;
+    batt.title = tip;
 
     if (initial || !prev || !p.battery) { render(); return; }
     if (!prev.ac && p.ac) { $('chLbl').textContent = T('charging'); setHud('charge', 2800); }
@@ -668,7 +737,12 @@
     $('privLine').title = T('privacy_tip');
     $('mediaRestore').title = $('mediaRestore').ariaLabel = T('restore_player');
     $('soundSettingsBtn').title = $('soundSettingsBtn').ariaLabel = T('sound_settings');
+    $('muteBtn').title = $('muteBtn').ariaLabel = T('mute_toggle');
     $('shelfBtn').title = $('shelfBtn').ariaLabel = T('shelf_open');
+    $('clipsBtn').title = $('clipsBtn').ariaLabel = T('clips_open');
+    $('dndBtn').title = $('dndBtn').ariaLabel = T('dnd_tip');
+    $('gearBtn').title = $('gearBtn').ariaLabel = T('settings');
+    if (st.update && st.update.available) $('updBadge').title = T('upd_badge', { v: st.update.version });
     $('vClipLbl') && ($('vClipLbl').textContent = T('copied'));
     const clipLbl = island.querySelector('.v-clip .lbl');
     if (clipLbl) clipLbl.textContent = T('copied');
@@ -689,8 +763,10 @@
     st.settings = v || st.settings;
     reduceMotion = st.settings.animations === false;
     if (st.settings.dwell_ms) DWELL.busy = st.settings.dwell_ms;
+    island.dataset.border = st.settings.border_style || 'subtle';
     $('sysRow').hidden = st.settings.sysload === false;
     if (st.device) $('devChip').hidden = st.settings.devices === false;
+    $('clipsBtn').hidden = st.settings.clipboard === false || st.clips.length === 0;
     applyLocale();
     render();
     document.body.classList.toggle('no-motion', reduceMotion);
@@ -765,7 +841,7 @@
     for (const item of st.shelf) {
       const chip = document.createElement('div');
       chip.className = 'shelf-item';
-      chip.title = item.path;
+      chip.title = T('shelf_item_tip', { path: item.path });
       const ico = document.createElement('span');
       ico.textContent = item.is_dir ? '📁' : '📄';
       const name = document.createElement('span');
@@ -781,21 +857,59 @@
       chip.addEventListener('pointerdown', (e) => {
         if (e.button !== 0 || e.target.closest('.shelf-x')) return;
         const x0 = e.clientX, y0 = e.clientY;
+        let dragged = false;
         const onMove = (ev) => {
           if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 6) {
+            dragged = true;
             cleanup();
             invoke('shelf_drag', { path: item.path }).catch(() => {});
           }
         };
+        const onUp = () => {
+          cleanup();
+          if (!dragged) invoke('shelf_reveal', { path: item.path }).catch(() => {});
+        };
         const cleanup = () => {
           window.removeEventListener('pointermove', onMove);
-          window.removeEventListener('pointerup', cleanup);
+          window.removeEventListener('pointerup', onUp);
         };
         window.addEventListener('pointermove', onMove);
-        window.addEventListener('pointerup', cleanup);
+        window.addEventListener('pointerup', onUp);
       });
       grid.appendChild(chip);
     }
+    render();
+  }
+
+  // ---------- оперативная история буфера обмена ----------
+  function applyClips(items) {
+    st.clips = Array.isArray(items) ? items : [];
+    $('clipsBtn').hidden = st.settings.clipboard === false || st.clips.length === 0;
+    $('clipsCount').textContent = String(st.clips.length);
+    $('clipsClearBtn').hidden = st.clips.length === 0;
+    $('clipsEmpty').hidden = st.clips.length > 0;
+    const list = $('clipsList');
+    list.innerHTML = '';
+    st.clips.forEach((txt, i) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'adev';
+      btn.dataset.a = 'clip-pick';
+      btn.dataset.idx = String(i);
+      btn.title = txt.slice(0, 300);
+      btn.innerHTML = '<span class="adev-name"></span><span class="adev-chk"></span>';
+      btn.querySelector('.adev-name').textContent = txt.replace(/\s+/g, ' ').trim();
+      list.appendChild(btn);
+    });
+    render();
+  }
+
+  function applyUpdate(info) {
+    st.update = info || null;
+    const badge = $('updBadge');
+    const show = !!(info && info.available);
+    badge.hidden = !show;
+    if (show) badge.title = T('upd_badge', { v: info.version });
     render();
   }
 
@@ -808,6 +922,10 @@
       fill.style.transform = `scaleX(${(n / 100).toFixed(3)})`;
       fill.classList.toggle('hot', n >= 85);
       $(val).textContent = n + '%';
+    }
+    if (v && v.totalGb) {
+      const memMeter = $('memFill').closest('.meter');
+      if (memMeter) memMeter.title = T('mem_detail', { u: v.usedGb, t: v.totalGb });
     }
   }
 
@@ -883,6 +1001,8 @@
   listen('hotkey', (e) => onHotkey(e.payload));
   listen('drag-hover', (e) => { st.dragHover = !!e.payload; if (st.dragHover) st.subview = 'shelf'; render(); });
   listen('shelf', (e) => applyShelf(e.payload));
+  listen('clips', (e) => applyClips(e.payload));
+  listen('update', (e) => applyUpdate(e.payload));
   listen('topbusy', (e) => { st.topbusy = !!e.payload; render(); });
   listen('fullscreen', (e) => { st.full = !!e.payload; render(); });
   listen('media', (e) => applyMedia(e.payload, false));
@@ -936,6 +1056,7 @@
   }
 
   // ---------- старт ----------
+  restoreTimer();
   window.addEventListener('resize', () => { lastRect = ''; render(); });
   paint();
   render();
@@ -946,6 +1067,8 @@
     if (s.privacy) applyPrivacy(s.privacy);
     if (s.device) applyDevice(s.device, true);
     if (s.shelf) applyShelf(s.shelf);
+    if (s.clips) applyClips(s.clips);
+    if (s.update) applyUpdate(s.update);
     if (s.sys) applySys(s.sys);
     if (s.stats) st.pomodoros = s.stats.pomodoros || 0;
     if (s.art !== undefined) setArt(s.art || null);

@@ -22,10 +22,13 @@ fn times() -> Option<(u64, u64)> {
     Some((ft(idle), ft(kernel) + ft(user)))
 }
 
-fn memory() -> Option<u32> {
+fn memory() -> Option<(u32, f64, f64)> {
     let mut m = MEMORYSTATUSEX { dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32, ..Default::default() };
     unsafe { GlobalMemoryStatusEx(&mut m) }.ok()?;
-    Some(m.dwMemoryLoad)
+    let gib = 1024.0 * 1024.0 * 1024.0;
+    let total = (m.ullTotalPhys as f64 / gib * 10.0).round() / 10.0;
+    let used = (m.ullTotalPhys.saturating_sub(m.ullAvailPhys) as f64 / gib * 10.0).round() / 10.0;
+    Some((m.dwMemoryLoad, used, total))
 }
 
 pub fn spawn(app: AppHandle) {
@@ -66,7 +69,8 @@ pub fn spawn(app: AppHandle) {
                 _ => 0,
             };
             prev = now;
-            let v = json!({ "cpu": cpu, "mem": memory().unwrap_or(0) });
+            let (mem, used_gb, total_gb) = memory().unwrap_or((0, 0.0, 0.0));
+            let v = json!({ "cpu": cpu, "mem": mem, "usedGb": used_gb, "totalGb": total_gb });
             if last.as_ref() != Some(&v) {
                 publish(&app, "sys", v.clone());
                 last = Some(v);

@@ -36,15 +36,21 @@ mod winmsg;
 use settings::{Settings, Stats};
 use shelf::ShelfItem;
 
+type TrayItems = (MenuItem<tauri::Wry>, MenuItem<tauri::Wry>, MenuItem<tauri::Wry>);
+
 /// Общее состояние: зона острова (в CSS-пикселях окна), настройки и последние снимки данных.
 #[derive(Default)]
 pub struct Shared {
     pub rect: Mutex<[f64; 4]>,
     /// Остров раскрыт и должен ловить мышь; иначе клики идут сквозь него.
     pub interactive: AtomicBool,
+    /// Позиция или масштаб окна изменились — потоку `hover` пора перечитать геометрию.
+    pub geom_dirty: AtomicBool,
     pub settings: Mutex<Settings>,
     pub stats: Mutex<Stats>,
     pub shelf: Mutex<Vec<ShelfItem>>,
+    pub clips: Mutex<Vec<String>>,
+    pub tray_items: Mutex<Option<TrayItems>>,
     pub snap: Mutex<Map<String, Value>>,
 }
 
@@ -166,6 +172,7 @@ fn open_release_url(url: String) {
 
 fn publish_shelf(app: &AppHandle) {
     let items = lock(&app.state::<Shared>().shelf).clone();
+    shelf::save(app, &items);
     publish(app, "shelf", json!(items));
 }
 
@@ -190,8 +197,46 @@ fn shelf_drag(path: String) {
 }
 
 #[tauri::command]
+fn shelf_reveal(path: String) {
+    shelf::reveal_in_explorer(path);
+}
+
+#[tauri::command]
+fn shelf_from_clipboard(app: AppHandle) -> bool {
+    let paths = clipboard::read_files();
+    if paths.is_empty() {
+        return false;
+    }
+    let changed = {
+        let shared = app.state::<Shared>();
+        let mut sh = lock(&shared.shelf);
+        shelf::add_paths(&mut sh, paths)
+    };
+    if changed {
+        publish_shelf(&app);
+    }
+    changed
+}
+
+#[tauri::command]
+fn clip_copy(text: String) -> bool {
+    clipboard::write_text(&text)
+}
+
+#[tauri::command]
+fn clips_clear(app: AppHandle) {
+    lock(&app.state::<Shared>().clips).clear();
+    publish(&app, "clips", json!([]));
+}
+
+#[tauri::command]
 fn volume_step(delta: f32) {
     audio::step(delta);
+}
+
+#[tauri::command]
+fn volume_mute_toggle() {
+    audio::toggle_mute();
 }
 
 /// Отчёт о плавности анимации из демо-режима (`--demo`): печатается только в отладочной сборке.
@@ -252,6 +297,9 @@ fn set_setting(app: AppHandle, key: String, value: Value) -> Value {
                 if !matches!(updated.align.as_str(), "left" | "center" | "right") {
                     updated.align = "center".to_string();
                 }
+                if !matches!(updated.border_style.as_str(), "subtle" | "glow" | "none") {
+                    updated.border_style = "subtle".to_string();
+                }
                 *s = updated;
             }
             s.clone()
@@ -266,6 +314,9 @@ fn set_setting(app: AppHandle, key: String, value: Value) -> Value {
                 }
                 let _ = app.emit("screen", ());
             }
+        }
+        if key == "lang" {
+            sync_tray_labels(&app);
         }
         if matches!(key.as_str(), "hotkeys" | "hotkey_toggle" | "hotkey_timer") {
             hotkeys::sync();
@@ -313,6 +364,9 @@ pub(crate) fn place_on(win: &WebviewWindow, mon: &Monitor, align: &str) {
     let wa_top = mon.work_area().position.y;
     let y = if wa_top > mon.position().y { wa_top } else { mon.position().y };
     let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
+    if let Some(shared) = win.app_handle().try_state::<Shared>() {
+        shared.geom_dirty.store(true, Ordering::Relaxed);
+    }
 }
 
 /// Ставит окно у верхнего края основного монитора согласно настройке `align`.
@@ -322,13 +376,33 @@ pub(crate) fn place(win: &WebviewWindow) {
     place_on(win, &mon, &align);
 }
 
+fn sync_tray_labels(app: &AppHandle) {
+    let shared = app.state::<Shared>();
+    let en = lock(&shared.settings).effective_lang() == "en";
+    let visible = app
+        .get_webview_window("island")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(true);
+    if let Some((settings_i, toggle_i, quit_i)) = lock(&shared.tray_items).as_ref() {
+        let _ = settings_i.set_text(if en { "Settings…" } else { "Настройки…" });
+        let _ = toggle_i.set_text(match (en, visible) {
+            (true, true) => "Hide Island",
+            (true, false) => "Show Island",
+            (false, true) => "Скрыть остров",
+            (false, false) => "Показать остров",
+        });
+        let _ = quit_i.set_text(if en { "Quit" } else { "Выход" });
+    };
+}
+
 fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     let settings_i = MenuItem::with_id(app, "settings", "Настройки…", true, None::<&str>)?;
     let toggle = MenuItem::with_id(app, "toggle", "Скрыть остров", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(app, &[&settings_i, &sep, &toggle, &quit])?;
-    let toggle_i = toggle.clone();
+    *lock(&app.state::<Shared>().tray_items) = Some((settings_i.clone(), toggle.clone(), quit.clone()));
+    sync_tray_labels(app.handle());
 
     let mut tray = TrayIconBuilder::with_id("main")
         .tooltip("Dynamic Island")
@@ -351,7 +425,7 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
                         let _ = w.show();
                         place(&w);
                     }
-                    let _ = toggle_i.set_text(if visible { "Показать остров" } else { "Скрыть остров" });
+                    sync_tray_labels(app);
                 }
             }
             _ => {}
@@ -384,6 +458,7 @@ pub fn run() {
             media_seek,
             media_cycle,
             volume_step,
+            volume_mute_toggle,
             perf,
             pomodoro_done,
             get_settings,
@@ -397,7 +472,11 @@ pub fn run() {
             open_release_url,
             shelf_remove,
             shelf_clear,
-            shelf_drag
+            shelf_drag,
+            shelf_reveal,
+            shelf_from_clipboard,
+            clip_copy,
+            clips_clear
         ])
         .on_window_event(|win, event| {
             if win.label() == "island" {
@@ -440,8 +519,12 @@ pub fn run() {
             let handle = app.handle().clone();
             *lock(&app.state::<Shared>().settings) = settings::load(&handle);
             *lock(&app.state::<Shared>().stats) = settings::load_stats(&handle, &sysinfo::today());
+            let loaded_shelf = shelf::load(&handle);
+            *lock(&app.state::<Shared>().shelf) = loaded_shelf.clone();
             publish_settings(&handle);
             publish_stats(&handle);
+            publish(&handle, "shelf", json!(loaded_shelf));
+            publish(&handle, "clips", json!([]));
             if cfg!(debug_assertions) && std::env::args().any(|a| a == "--demo") {
                 publish(&handle, "demo", json!(true));
             }

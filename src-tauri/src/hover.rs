@@ -58,11 +58,11 @@ fn top_covered(own: &WebviewWindow) -> bool {
         if IsZoomed(fg).as_bool() {
             return true;
         }
-        covers_top_center(fg, fg_mon)
+        covers_island_span(fg, own_hwnd, fg_mon)
     }
 }
 
-unsafe fn covers_top_center(hwnd: HWND, mon: windows::Win32::Graphics::Gdi::HMONITOR) -> bool {
+unsafe fn covers_island_span(hwnd: HWND, own_hwnd: HWND, mon: windows::Win32::Graphics::Gdi::HMONITOR) -> bool {
     let mut r = RECT::default();
     if GetWindowRect(hwnd, &mut r).is_err() {
         return false;
@@ -72,9 +72,14 @@ unsafe fn covers_top_center(hwnd: HWND, mon: windows::Win32::Graphics::Gdi::HMON
         return false;
     }
     let m = mi.rcMonitor;
-    let center = (m.left + m.right) / 2;
-    // Окно начинается у самого верха (с небольшим допуском на рамку) и проходит под центром.
-    r.top <= m.top + 12 && r.left < center + 150 && r.right > center - 150
+    let mut own_r = RECT::default();
+    let island_cx = if GetWindowRect(own_hwnd, &mut own_r).is_ok() && own_r.right > own_r.left {
+        (own_r.left + own_r.right) / 2
+    } else {
+        (m.left + m.right) / 2
+    };
+    // Окно начинается у самого верха (с небольшим допуском на рамку) и проходит под островом.
+    r.top <= m.top + 12 && r.left < island_cx + 150 && r.right > island_cx - 150
 }
 
 /// Окно потеряло «поверх всех»? Проверяем стиль напрямую: повторный SetWindowPos
@@ -133,12 +138,13 @@ pub fn spawn(app: AppHandle) {
             let has_cursor = unsafe { GetCursorPos(&mut p) }.is_ok();
             let shared = app.state::<Shared>();
             let interactive = shared.interactive.load(Ordering::Relaxed);
+            let dirty = shared.geom_dirty.swap(false, Ordering::Relaxed);
             let (follow_cursor, align) = {
                 let s = crate::lock(&shared.settings);
                 (s.monitor_mode == "cursor", s.align.clone())
             };
 
-            if geom.is_none() || tick % 80 == 0 || (follow_cursor && tick % 12 == 0 && !inside && !interactive && has_cursor) {
+            if dirty || geom.is_none() || tick % 80 == 0 || (follow_cursor && tick % 12 == 0 && !inside && !interactive && has_cursor) {
                 let target_mon = if follow_cursor && has_cursor {
                     monitor_at_point(&win, p.x, p.y).or_else(|| current_monitor(&win))
                 } else {
@@ -146,10 +152,10 @@ pub fn spawn(app: AppHandle) {
                 };
                 if let Some(m) = target_mon {
                     let now = mon_key(&m);
-                    if screen != Some(now) {
+                    if dirty || screen != Some(now) {
                         let had_screen = screen.is_some();
                         crate::place_on(&win, &m, &align);
-                        if had_screen {
+                        if had_screen && !dirty {
                             let _ = app.emit("screen", ());
                         }
                         screen = Some(now);
@@ -158,7 +164,7 @@ pub fn spawn(app: AppHandle) {
                         }
                     }
                 }
-                if geom.is_none() || tick % 80 == 0 {
+                if dirty || geom.is_none() || tick % 80 == 0 {
                     if let (Ok(pos), Ok(scale)) = (win.outer_position(), win.scale_factor()) {
                         geom = Some((pos, scale));
                     }

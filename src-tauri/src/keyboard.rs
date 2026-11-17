@@ -25,6 +25,15 @@ fn label(langid: u16) -> (String, String) {
         0x07 => ("DE", "Deutsch"),
         0x0c => ("FR", "Français"),
         0x0a => ("ES", "Español"),
+        0x10 => ("IT", "Italiano"),
+        0x16 => ("PT", "Português"),
+        0x15 => ("PL", "Polski"),
+        0x1f => ("TR", "Türkçe"),
+        0x11 => ("JA", "日本語"),
+        0x12 => ("KO", "한국어"),
+        0x04 => ("ZH", "中文"),
+        0x0d => ("HE", "עברית"),
+        0x01 => ("AR", "العربية"),
         _ => ("", ""),
     };
     if !short.is_empty() {
@@ -72,15 +81,16 @@ pub fn spawn(app: AppHandle) {
         let mut last_caps = caps();
         loop {
             std::thread::sleep(Duration::from_millis(120));
-            let enabled = crate::lock(&app.state::<Shared>().settings).keyboard;
+            if !crate::lock(&app.state::<Shared>().settings).keyboard {
+                std::thread::sleep(Duration::from_millis(880));
+                continue;
+            }
             let (win, lang, transient) = current();
             let c = caps();
 
             if c != last_caps {
                 last_caps = c;
-                if enabled {
-                    publish(&app, "caps", json!(c));
-                }
+                publish(&app, "caps", json!(c));
             }
             // Всплывающее меню Win+Space кратковременно забирает фокус, не считаем его сменой окна.
             if transient {
@@ -88,7 +98,7 @@ pub fn spawn(app: AppHandle) {
             }
             if lang != last_lang {
                 // язык сменился в том же окне — это переключение раскладки, а не смена окна
-                if enabled && win == last_win && lang != 0 {
+                if win == last_win && lang != 0 {
                     let (short, long) = label(lang);
                     if !short.is_empty() {
                         publish(&app, "layout", json!({ "short": short, "long": long }));
@@ -99,4 +109,16 @@ pub fn spawn(app: AppHandle) {
             last_win = win;
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_common_language_ids() {
+        assert_eq!(label(0x0419), ("РУ".to_string(), "Русская".to_string()));
+        assert_eq!(label(0x0409), ("EN".to_string(), "English".to_string()));
+        assert_eq!(label(0x0411), ("JA".to_string(), "日本語".to_string()));
+    }
 }

@@ -137,6 +137,15 @@
           <button type="button" data-v="en">English</button>
         </div>
         <div class="row" style="border-bottom:none">
+          <div class="txt"><div class="t" data-i18n="s_border">Стиль обводки</div></div>
+        </div>
+        <div class="seg" data-seg="border_style" data-default="subtle" role="group">
+          <span class="pill"></span>
+          <button type="button" data-v="subtle" data-i18n="s_border_subtle">Тонкая</button>
+          <button type="button" data-v="glow" data-i18n="s_border_glow">Свечение</button>
+          <button type="button" data-v="none" data-i18n="s_border_none">Без рамки</button>
+        </div>
+        <div class="row" style="border-bottom:none">
           <div class="txt"><div class="t" data-i18n="s_monitor">Экран</div><div class="d" data-i18n="s_monitor_d">На каком мониторе показывать остров</div></div>
         </div>
         <div class="seg two" data-seg="monitor_mode" data-default="primary" role="group">
@@ -217,6 +226,10 @@
         <label class="row" for="sounds">
           <div class="txt"><div class="t" data-i18n="s_sounds">Звук в конце</div><div class="d" data-i18n="s_sounds_d">Короткий сигнал, когда таймер или помодоро закончились</div></div>
           <span class="sw"><input type="checkbox" id="sounds" data-key="sounds"><span></span></span>
+        </label>
+        <label class="row" for="quiet_pomo">
+          <div class="txt"><div class="t" data-i18n="s_quiet_pomo">Тихий режим в помодоро</div><div class="d" data-i18n="s_quiet_pomo_d">Скрывать мелкие всплывающие тосты во время фокуса</div></div>
+          <span class="sw"><input type="checkbox" id="quiet_pomo" data-key="quiet_pomo"><span></span></span>
         </label>
         <div class="row" style="border-bottom:none">
           <div class="txt"><div class="t" data-i18n="s_sound_vol">Громкость сигнала</div></div>

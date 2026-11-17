@@ -34,11 +34,14 @@ fn read() -> Option<Value> {
     // 128 — батареи нет (настольный ПК), 255 — состояние неизвестно.
     let battery = s.BatteryFlag != 128 && s.BatteryFlag != 255;
     let percent = if s.BatteryLifePercent <= 100 { s.BatteryLifePercent } else { 100 };
+    let ac = s.ACLineStatus == 1;
+    let secs_left = (!ac && s.BatteryLifeTime != u32::MAX && s.BatteryLifeTime > 0).then_some(s.BatteryLifeTime);
     Some(json!({
-        "ac": s.ACLineStatus == 1,
+        "ac": ac,
         "percent": percent,
         "battery": battery,
         "saver": s.SystemStatusFlag == 1,
+        "secsLeft": secs_left,
     }))
 }
 
