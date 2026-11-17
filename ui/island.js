@@ -26,9 +26,9 @@
     tmini: [150, 32, 16],
     home: [480, 116, 30],
     music: [392, 166, 38],
-    audio: [340, 120, 26],
-    shelf: [392, 132, 28],
-    clips: [392, 132, 28],
+    audio: [384, 120, 26],
+    shelf: [412, 132, 28],
+    clips: [412, 132, 28],
     peek: [330, 54, 27],
     volume: [290, 36, 18],
     charge: [290, 36, 18],
@@ -222,9 +222,9 @@
   function sizeOf(m) {
     if (m === 'idle') return [st.settings.idle_style === 'clock' && st.settings.clock_seconds ? 140 : 124, 30, 15];
     if (m === 'home') return [480, measureHeight($$home), 30];
-    if (m === 'audio') return [340, measureHeight(document.querySelector('[data-view="audio"]'), 172), 26];
-    if (m === 'shelf') return [392, measureHeight(document.querySelector('[data-view="shelf"]'), 172), 28];
-    if (m === 'clips') return [392, measureHeight(document.querySelector('[data-view="clips"]'), 172), 28];
+    if (m === 'audio') return [384, measureHeight(document.querySelector('[data-view="audio"]'), 172), 26];
+    if (m === 'shelf') return [412, measureHeight(document.querySelector('[data-view="shelf"]'), 172), 28];
+    if (m === 'clips') return [412, measureHeight(document.querySelector('[data-view="clips"]'), 172), 28];
     return SIZE[m];
   }
 
@@ -289,11 +289,13 @@
     if (m === 'hidden' || (!interactive && expMode === 'hotkey')) {
       sendRect(0, 0, 0, 0, false);
     } else if (sliver) {
-      sendRect((innerWidth - 96 * sc) / 2, 0, 96 * sc, 6, false);
+      sendRect((innerWidth - 96 * sc) / 2, 0, 96 * sc, 7, false);
     } else if (!interactive) {
-      sendRect((innerWidth - sw) / 2, top, sw, sh, wheelOnly || clickTrigger);
+      // От самого верха экрана (y = 0) до низа пилюли: если увести мышь до упора вверх (y = 0),
+      // курсор не выпадает в зазор над островом и не вызывает ложное закрытие.
+      sendRect((innerWidth - sw) / 2, 0, sw, top + sh, wheelOnly || clickTrigger);
     } else {
-      sendRect((innerWidth - sw) / 2 - 2, Math.max(0, top - 2), sw + 4, sh + 4, true);
+      sendRect((innerWidth - sw) / 2 - 6, 0, sw + 12, top + sh + 6, true);
     }
     live();
   }
