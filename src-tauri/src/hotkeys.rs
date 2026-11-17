@@ -1,8 +1,8 @@
 //! Настраиваемые глобальные горячие клавиши (`RegisterHotKey`).
-//! По умолчанию: `Ctrl+Alt+I` (остров) и `Ctrl+Alt+T` (помодоро / пауза).
+//! По умолчанию: `Ctrl+Alt+I` (остров), `Ctrl+Alt+T` (помодоро / пауза), `Ctrl+Alt+M` (режим капсулы).
 
 use std::cell::RefCell;
-use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 
 use tauri::{AppHandle, Emitter, Manager};
 use windows::core::w;
@@ -17,11 +17,13 @@ use crate::{winmsg, Shared};
 
 const HK_TOGGLE: i32 = 1;
 const HK_TIMER: i32 = 2;
+const HK_CAPSULE: i32 = 3;
 const WM_SYNC_HOTKEYS: u32 = WM_APP + 1;
 
 static HOTKEY_HWND: AtomicIsize = AtomicIsize::new(0);
-static TOGGLE_OK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
-static TIMER_OK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+static TOGGLE_OK: AtomicBool = AtomicBool::new(true);
+static TIMER_OK: AtomicBool = AtomicBool::new(true);
+static CAPSULE_OK: AtomicBool = AtomicBool::new(true);
 
 thread_local! {
     static APP: RefCell<Option<AppHandle>> = const { RefCell::new(None) };
@@ -67,7 +69,6 @@ pub fn parse_hotkey(spec: &str) -> Option<(u32, u32)> {
 
     let code = vk?;
     if mods == MOD_NOREPEAT.0 {
-        // Без модификаторов одиночную клавишу глобально не перехватываем.
         return None;
     }
     Some((mods, code))
@@ -87,6 +88,7 @@ unsafe fn register_one(hwnd: HWND, id: i32, spec: &str) -> bool {
 unsafe fn apply_registration(hwnd: HWND) {
     let _ = UnregisterHotKey(Some(hwnd), HK_TOGGLE);
     let _ = UnregisterHotKey(Some(hwnd), HK_TIMER);
+    let _ = UnregisterHotKey(Some(hwnd), HK_CAPSULE);
     APP.with(|c| {
         if let Some(app) = c.borrow().as_ref() {
             let s = crate::lock(&app.state::<Shared>().settings).clone();
@@ -97,23 +99,45 @@ unsafe fn apply_registration(hwnd: HWND) {
                 } else {
                     register_one(hwnd, HK_TIMER, &s.hotkey_timer)
                 };
+                let ok3 = if s.hotkey_capsule.eq_ignore_ascii_case(&s.hotkey_toggle)
+                    || s.hotkey_capsule.eq_ignore_ascii_case(&s.hotkey_timer)
+                {
+                    false
+                } else {
+                    register_one(hwnd, HK_CAPSULE, &s.hotkey_capsule)
+                };
                 TOGGLE_OK.store(ok1, Ordering::Relaxed);
                 TIMER_OK.store(ok2, Ordering::Relaxed);
+                CAPSULE_OK.store(ok3, Ordering::Relaxed);
             } else {
                 TOGGLE_OK.store(true, Ordering::Relaxed);
                 TIMER_OK.store(true, Ordering::Relaxed);
+                CAPSULE_OK.store(true, Ordering::Relaxed);
             }
         }
     });
 }
 
-pub fn status() -> (bool, bool) {
-    (TOGGLE_OK.load(Ordering::Relaxed), TIMER_OK.load(Ordering::Relaxed))
+pub fn status() -> (bool, bool, bool) {
+    (
+        TOGGLE_OK.load(Ordering::Relaxed),
+        TIMER_OK.load(Ordering::Relaxed),
+        CAPSULE_OK.load(Ordering::Relaxed),
+    )
 }
 
 unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if msg == WM_HOTKEY {
-        let action = match wparam.0 as i32 {
+        let id = wparam.0 as i32;
+        if id == HK_CAPSULE {
+            APP.with(|c| {
+                if let Some(app) = c.borrow().as_ref() {
+                    crate::toggle_capsule_mode(app);
+                }
+            });
+            return LRESULT(0);
+        }
+        let action = match id {
             HK_TOGGLE => Some("toggle"),
             HK_TIMER => Some("timer"),
             _ => None,
@@ -161,6 +185,7 @@ mod tests {
     #[test]
     fn parses_valid_and_rejects_bare_keys() {
         assert_eq!(parse_hotkey("Ctrl+Alt+I"), Some(((MOD_NOREPEAT | MOD_CONTROL | MOD_ALT).0, b'I' as u32)));
+        assert_eq!(parse_hotkey("Ctrl+Alt+M"), Some(((MOD_NOREPEAT | MOD_CONTROL | MOD_ALT).0, b'M' as u32)));
         assert_eq!(parse_hotkey("Ctrl+Shift+Space"), Some(((MOD_NOREPEAT | MOD_CONTROL | MOD_SHIFT).0, 0x20)));
         assert_eq!(parse_hotkey("Alt+F5"), Some(((MOD_NOREPEAT | MOD_ALT).0, 0x74)));
         assert_eq!(parse_hotkey("I"), None);

@@ -76,6 +76,12 @@ pub struct Settings {
     pub pomo_work_min: u16,
     /// Длительность перерыва помодоро (мин).
     pub pomo_break_min: u16,
+    /// Режим «Просто капсула»: чистая click-through капсула без раскрытий и всплывающих уведомлений.
+    pub capsule_only: bool,
+    /// Горячая клавиша переключения режима «Просто капсула».
+    pub hotkey_capsule: String,
+    /// Вид свёрнутого острова над развёрнутым окном: `"sliver"`, `"pill"` или `"hide"`.
+    pub over_maximized: String,
 }
 
 impl Settings {
@@ -125,6 +131,9 @@ impl Default for Settings {
             clock_seconds: false,
             pomo_work_min: 25,
             pomo_break_min: 5,
+            capsule_only: false,
+            hotkey_capsule: "Ctrl+Alt+M".to_string(),
+            over_maximized: "sliver".to_string(),
         }
     }
 }

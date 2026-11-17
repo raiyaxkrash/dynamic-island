@@ -174,8 +174,8 @@
       const combo = keyLabel(e);
       if (combo) {
         const btn = recording;
-        const otherKey = btn.dataset.hk === 'hotkey_toggle' ? 'hotkey_timer' : 'hotkey_toggle';
-        if ((cur[otherKey] || '').toLowerCase() === combo.toLowerCase()) {
+        const dup = hkBtns.some((o) => o !== btn && (cur[o.dataset.hk] || '').toLowerCase() === combo.toLowerCase());
+        if (dup) {
           btn.classList.remove('rec');
           btn.classList.add('err');
           btn.textContent = cur[btn.dataset.hk] || '';

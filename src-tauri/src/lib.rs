@@ -38,7 +38,12 @@ mod winmsg;
 use settings::{Settings, Stats};
 use shelf::ShelfItem;
 
-type TrayItems = (MenuItem<tauri::Wry>, MenuItem<tauri::Wry>, MenuItem<tauri::Wry>);
+type TrayItems = (
+    MenuItem<tauri::Wry>,
+    MenuItem<tauri::Wry>,
+    MenuItem<tauri::Wry>,
+    MenuItem<tauri::Wry>,
+);
 
 /// Общее состояние: зона острова (в CSS-пикселях окна), настройки и последние снимки данных.
 #[derive(Default)]
@@ -304,7 +309,7 @@ fn get_settings(state: tauri::State<Shared>) -> Value {
     let mut v = json!(*lock(&state.settings));
     let stats = lock(&state.stats);
     let (today, week, streak) = settings::stats_summary(&stats, &sysinfo::today());
-    let (hk_toggle_ok, hk_timer_ok) = hotkeys::status();
+    let (hk_toggle_ok, hk_timer_ok, hk_capsule_ok) = hotkeys::status();
     v["autostart"] = json!(settings::autostart_enabled());
     v["version"] = json!(env!("CARGO_PKG_VERSION"));
     v["pomodoros_today"] = json!(today);
@@ -312,6 +317,7 @@ fn get_settings(state: tauri::State<Shared>) -> Value {
     v["pomodoros_streak"] = json!(streak);
     v["hotkey_toggle_ok"] = json!(hk_toggle_ok);
     v["hotkey_timer_ok"] = json!(hk_timer_ok);
+    v["hotkey_capsule_ok"] = json!(hk_capsule_ok);
     v
 }
 
@@ -355,6 +361,9 @@ fn set_setting(app: AppHandle, key: String, value: Value) -> Value {
                 if !matches!(updated.spring_preset.as_str(), "soft" | "normal" | "bouncy" | "snappy") {
                     updated.spring_preset = "normal".to_string();
                 }
+                if !matches!(updated.over_maximized.as_str(), "sliver" | "pill" | "hide") {
+                    updated.over_maximized = "sliver".to_string();
+                }
                 let valid_accent = updated.accent_color == "auto"
                     || (updated.accent_color.len() == 7
                         && updated.accent_color.starts_with('#')
@@ -362,12 +371,15 @@ fn set_setting(app: AppHandle, key: String, value: Value) -> Value {
                 if !valid_accent {
                     updated.accent_color = "auto".to_string();
                 }
-                if matches!(key.as_str(), "hotkey_toggle" | "hotkey_timer")
-                    && updated.hotkey_toggle.eq_ignore_ascii_case(&updated.hotkey_timer)
-                {
-                    // Не допускаем одинакового сочетания на оба действия.
-                    updated.hotkey_toggle = s.hotkey_toggle.clone();
-                    updated.hotkey_timer = s.hotkey_timer.clone();
+                if matches!(key.as_str(), "hotkey_toggle" | "hotkey_timer" | "hotkey_capsule") {
+                    let a = updated.hotkey_toggle.to_ascii_lowercase();
+                    let b = updated.hotkey_timer.to_ascii_lowercase();
+                    let c = updated.hotkey_capsule.to_ascii_lowercase();
+                    if a == b || a == c || b == c {
+                        updated.hotkey_toggle = s.hotkey_toggle.clone();
+                        updated.hotkey_timer = s.hotkey_timer.clone();
+                        updated.hotkey_capsule = s.hotkey_capsule.clone();
+                    }
                 }
                 *s = updated;
             }
@@ -384,10 +396,10 @@ fn set_setting(app: AppHandle, key: String, value: Value) -> Value {
                 let _ = app.emit("screen", ());
             }
         }
-        if key == "lang" {
+        if matches!(key.as_str(), "lang" | "capsule_only") {
             sync_tray_labels(&app);
         }
-        if matches!(key.as_str(), "hotkeys" | "hotkey_toggle" | "hotkey_timer") {
+        if matches!(key.as_str(), "hotkeys" | "hotkey_toggle" | "hotkey_timer" | "hotkey_capsule") {
             hotkeys::sync();
             std::thread::sleep(std::time::Duration::from_millis(25));
         }
@@ -485,15 +497,37 @@ pub(crate) fn place(win: &WebviewWindow) {
     place_on(win, &mon, &align);
 }
 
+pub(crate) fn toggle_capsule_mode(app: &AppHandle) {
+    let (snapshot, on) = {
+        let shared = app.state::<Shared>();
+        let mut s = lock(&shared.settings);
+        s.capsule_only = !s.capsule_only;
+        (s.clone(), s.capsule_only)
+    };
+    settings::save(app, &snapshot);
+    sync_tray_labels(app);
+    publish_settings(app);
+    let _ = app.emit("capsule-mode", on);
+}
+
 fn sync_tray_labels(app: &AppHandle) {
     let shared = app.state::<Shared>();
-    let en = lock(&shared.settings).effective_lang() == "en";
+    let (en, capsule) = {
+        let s = lock(&shared.settings);
+        (s.effective_lang() == "en", s.capsule_only)
+    };
     let visible = app
         .get_webview_window("island")
         .and_then(|w| w.is_visible().ok())
         .unwrap_or(true);
-    if let Some((settings_i, toggle_i, quit_i)) = lock(&shared.tray_items).as_ref() {
+    if let Some((settings_i, capsule_i, toggle_i, quit_i)) = lock(&shared.tray_items).as_ref() {
         let _ = settings_i.set_text(if en { "Settings…" } else { "Настройки…" });
+        let _ = capsule_i.set_text(match (en, capsule) {
+            (true, true) => "✓ Capsule Only Mode",
+            (true, false) => "Capsule Only Mode",
+            (false, true) => "✓ Режим «Просто капсула»",
+            (false, false) => "Режим «Просто капсула»",
+        });
         let _ = toggle_i.set_text(match (en, visible) {
             (true, true) => "Hide Island",
             (true, false) => "Show Island",
@@ -506,11 +540,17 @@ fn sync_tray_labels(app: &AppHandle) {
 
 fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     let settings_i = MenuItem::with_id(app, "settings", "Настройки…", true, None::<&str>)?;
+    let capsule_i = MenuItem::with_id(app, "capsule", "Режим «Просто капсула»", true, None::<&str>)?;
     let toggle = MenuItem::with_id(app, "toggle", "Скрыть остров", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&settings_i, &sep, &toggle, &quit])?;
-    *lock(&app.state::<Shared>().tray_items) = Some((settings_i.clone(), toggle.clone(), quit.clone()));
+    let menu = Menu::with_items(app, &[&settings_i, &capsule_i, &sep, &toggle, &quit])?;
+    *lock(&app.state::<Shared>().tray_items) = Some((
+        settings_i.clone(),
+        capsule_i.clone(),
+        toggle.clone(),
+        quit.clone(),
+    ));
     sync_tray_labels(app.handle());
 
     let mut tray = TrayIconBuilder::with_id("main")
@@ -525,6 +565,7 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
         .on_menu_event(move |app, event| match event.id().as_ref() {
             "quit" => app.exit(0),
             "settings" => show_settings(app),
+            "capsule" => toggle_capsule_mode(app),
             "toggle" => {
                 if let Some(w) = app.get_webview_window("island") {
                     let visible = w.is_visible().unwrap_or(true);

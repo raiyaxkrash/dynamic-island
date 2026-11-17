@@ -229,8 +229,15 @@
   }
 
   // ---------- выбор состояния ----------
+  let capsuleFlash = '';
+  let capsuleFlashTimer = null;
+
   function compact() {
-    if (st.topbusy) return 'sliver';
+    if (st.topbusy) {
+      const om = st.settings.over_maximized || 'sliver';
+      if (om === 'hide') return 'hidden';
+      if (om === 'sliver') return 'sliver';
+    }
     if (st.media.active && !st.mediaHidden && !longPaused()) return 'mini';
     if (timer.running()) return 'tmini';
     return 'idle';
@@ -244,6 +251,7 @@
 
   function mode() {
     if (st.full) return 'hidden';
+    if (st.settings.capsule_only) return 'idle';
     if (st.dragHover) return 'shelf';
     const expanded = st.hover || st.pinned;
     if (st.hud && (st.hud.force || !expanded)) return st.hud.type;
@@ -259,9 +267,10 @@
   function render() {
     const m = mode();
     const v = VIEW[m] || m;
+    const capOnly = !!st.settings.capsule_only;
     island.dataset.mode = m;
-    island.classList.toggle('playing', !!st.media.playing && !st.mediaHidden);
-    island.classList.toggle('drag-over', !!st.dragHover);
+    island.classList.toggle('playing', !capOnly && !!st.media.playing && !st.mediaHidden);
+    island.classList.toggle('drag-over', !capOnly && !!st.dragHover);
     mediaRestore.hidden = !(st.media.active && (st.mediaHidden || st.preferHome));
     const [w, h, r] = sizeOf(m);
     if (m === 'idle' || m === 'home' || m === 'audio' || m === 'shelf' || m === 'clips') {
@@ -273,26 +282,24 @@
     }
     const sliver = v === 'sliver';
     const top = topMargin();
-    island.dataset.idle = st.settings.idle_style || 'pill';
-    island.classList.toggle('stealth', m === 'idle' && st.settings.idle_style === 'hidden' && !st.pending);
+    island.dataset.idle = capsuleFlash ? 'clock' : (st.settings.idle_style === 'clock' ? 'clock' : 'pill');
+    island.classList.toggle('stealth', !capOnly && m === 'idle' && st.settings.idle_style === 'hidden' && !st.pending);
     setTargets(w, h, r, sliver ? 0 : r, sliver ? 0 : top);
     requestView(v);
 
-    // Зона попадания курсора: в свёрнутом состоянии строго по контуру самой пилюли (без лишних полей).
+    // Зона попадания курсора: в режиме «Просто капсула» остров на 100% прозрачен для мыши.
     const sc = uiScale();
     const sw = w * sc;
     const sh = h * sc;
     const expMode = st.settings.expand_mode || 'hover';
-    const interactive = st.hover || st.pinned || st.dragHover || m === 'done';
-    const clickTrigger = !interactive && expMode === 'click' && !st.topbusy && (m === 'idle' || m === 'mini' || m === 'tmini') && st.settings.idle_style !== 'hidden';
-    const wheelOnly = !interactive && !!st.settings.wheel_collapsed && !st.topbusy && (m === 'idle' || m === 'mini' || m === 'tmini');
-    if (m === 'hidden' || (!interactive && expMode === 'hotkey')) {
+    const interactive = !capOnly && (st.hover || st.pinned || st.dragHover || m === 'done');
+    const clickTrigger = !capOnly && !interactive && expMode === 'click' && !st.topbusy && (m === 'idle' || m === 'mini' || m === 'tmini') && st.settings.idle_style !== 'hidden';
+    const wheelOnly = !capOnly && !interactive && !!st.settings.wheel_collapsed && !st.topbusy && (m === 'idle' || m === 'mini' || m === 'tmini');
+    if (capOnly || m === 'hidden' || (!interactive && expMode === 'hotkey')) {
       sendRect(0, 0, 0, 0, false);
     } else if (sliver) {
       sendRect((innerWidth - 96 * sc) / 2, 0, 96 * sc, 7, false);
     } else if (!interactive) {
-      // От самого верха экрана (y = 0) до низа пилюли: если увести мышь до упора вверх (y = 0),
-      // курсор не выпадает в зазор над островом и не вызывает ложное закрытие.
       sendRect((innerWidth - sw) / 2, 0, sw, top + sh, wheelOnly || clickTrigger);
     } else {
       sendRect((innerWidth - sw) / 2 - 6, 0, sw + 12, top + sh + 6, true);
@@ -312,6 +319,7 @@
     return st.dnd || (!!st.settings.quiet_pomo && timer.running() && !timer.paused && timer.kind === 'work');
   }
   function setHud(type, ms, force) {
+    if (st.settings.capsule_only) return;
     if (!force && isQuiet() && (HUD_PRIO[type] || 0) < 50) return;
     if (st.hud && (HUD_PRIO[type] || 0) < (HUD_PRIO[st.hud.type] || 0)) return;
     st.hud = { type, force: !!force };
@@ -346,7 +354,10 @@
     const secStr = st.settings.clock_seconds ? `:${pad(d.getSeconds())}` : '';
     const timeEl = document.querySelector('.v-home .time');
     if (timeEl) timeEl.style.fontSize = st.settings.clock_seconds ? '20px' : '';
-    setLive('time', `${hStr}:${pad(d.getMinutes())}${secStr}`);
+    const clockText = `${hStr}:${pad(d.getMinutes())}${secStr}`;
+    setLive('time', clockText);
+    const idleClk = document.querySelector('.idle-clk');
+    if (idleClk) idleClk.textContent = capsuleFlash || clockText;
     const date = d.toLocaleDateString(lang === 'en' ? 'en-US' : 'ru-RU', { weekday: 'short', day: 'numeric', month: 'short' });
     setLive('date', st.pomodoros ? `${date} · 🍅 ${st.pomodoros}` : date);
 
@@ -889,6 +900,12 @@
       st.dnd = st.settings.dnd;
       $('dndBtn').classList.toggle('on', st.dnd);
     }
+    if (st.settings.capsule_only) {
+      st.hover = false;
+      st.pinned = false;
+      st.subview = null;
+      st.hud = null;
+    }
     const [sk, sc] = SPRING_PRESETS[st.settings.spring_preset] || SPRING_PRESETS.normal;
     for (const key of ['w', 'h', 'r', 'rt', 'top']) {
       S[key].k = sk;
@@ -1161,6 +1178,7 @@
   // ---------- события от Rust ----------
   function onHover(on) {
     clearTimeout(hoverTimer);
+    if (st.settings.capsule_only) return;
     if (on) {
       if (st.hover || st.pinned) { st.hover = true; return; }
       if ((st.settings.expand_mode || 'hover') !== 'hover') return;
@@ -1183,6 +1201,7 @@
   }
   function onHotkey(kind) {
     if (kind === 'toggle') {
+      if (st.settings.capsule_only) return;
       if (st.pinned) {
         st.pinned = false;
         st.hover = false;
@@ -1199,6 +1218,13 @@
   }
   listen('hover', (e) => onHover(!!e.payload));
   listen('hotkey', (e) => onHotkey(e.payload));
+  listen('capsule-mode', (e) => {
+    const on = !!e.payload;
+    capsuleFlash = on ? T('capsule_on') : T('capsule_off');
+    clearTimeout(capsuleFlashTimer);
+    capsuleFlashTimer = setTimeout(() => { capsuleFlash = ''; render(); }, 1100);
+    render();
+  });
   listen('drag-hover', (e) => { st.dragHover = !!e.payload; if (st.dragHover) st.subview = 'shelf'; render(); });
   listen('shelf', (e) => applyShelf(e.payload));
   listen('clips', (e) => applyClips(e.payload));

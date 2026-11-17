@@ -236,6 +236,21 @@
     <div class="pane" data-pane="behavior">
       <section>
         <div class="card">
+          <label class="row" for="capsule_only">
+            <div class="txt"><div class="t" data-i18n="s_capsule_only">Режим «Просто капсула»</div><div class="d" data-i18n="s_capsule_only_d">Только чистая click-through капсула без раскрытий и всплывающих окон (Ctrl+Alt+M)</div></div>
+            <span class="sw"><input type="checkbox" id="capsule_only" data-key="capsule_only"><span></span></span>
+          </label>
+
+          <div class="row compact" style="border-bottom:none">
+            <div class="txt"><div class="t" data-i18n="s_over_max">Над развёрнутыми окнами</div><div class="d" data-i18n="s_over_max_d">Как выглядит свёрнутый остров, когда окно развёрнуто на весь экран</div></div>
+          </div>
+          <div class="seg" data-seg="over_maximized" data-default="sliver" role="group">
+            <span class="pill"></span>
+            <button type="button" data-v="sliver" data-i18n="s_om_sliver">Полоска</button>
+            <button type="button" data-v="pill" data-i18n="s_om_pill">Капсула</button>
+            <button type="button" data-v="hide" data-i18n="s_om_hide">Скрывать</button>
+          </div>
+
           <div class="row compact" style="border-bottom:none">
             <div class="txt"><div class="t" data-i18n="s_expand">Способ раскрытия</div><div class="d" data-i18n="s_expand_d">Как открывать остров с рабочего стола</div></div>
           </div>
@@ -427,6 +442,10 @@
           <div class="row">
             <div class="txt"><div class="t" data-i18n="s_hk_timer">Старт помодоро / пауза</div></div>
             <button type="button" class="kbtn" data-hk="hotkey_timer">Ctrl+Alt+T</button>
+          </div>
+          <div class="row">
+            <div class="txt"><div class="t" data-i18n="s_hk_capsule">Режим «Просто капсула»</div></div>
+            <button type="button" class="kbtn" data-hk="hotkey_capsule">Ctrl+Alt+M</button>
           </div>
         </div>
       </section>

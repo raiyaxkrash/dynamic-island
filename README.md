@@ -24,7 +24,7 @@
   <a href="#build">Сборка</a>
 </p>
 
-<a href="https://github.com/raiyaxkrash/dynamic-island/releases/latest/download/Dynamic-Island-0.5.1-x64-setup.exe"><img src="https://img.shields.io/badge/⬇_Скачать_установщик_(v0.5.1)-x64_.exe-0A84FF?style=for-the-badge" alt="Скачать установщик"></a>&nbsp;&nbsp;<a href="https://github.com/raiyaxkrash/dynamic-island/releases/latest/download/dynamic-island-0.5.1-x64-portable.exe"><img src="https://img.shields.io/badge/📦_Portable_версия-без_установки-2C2C2E?style=for-the-badge" alt="Скачать Portable"></a>
+<a href="https://github.com/raiyaxkrash/dynamic-island/releases/latest/download/Dynamic-Island-0.6.0-x64-setup.exe"><img src="https://img.shields.io/badge/⬇_Скачать_установщик_(v0.6.0)-x64_.exe-0A84FF?style=for-the-badge" alt="Скачать установщик"></a>&nbsp;&nbsp;<a href="https://github.com/raiyaxkrash/dynamic-island/releases/latest/download/dynamic-island-0.6.0-x64-portable.exe"><img src="https://img.shields.io/badge/📦_Portable_версия-без_установки-2C2C2E?style=for-the-badge" alt="Скачать Portable"></a>
 
 </div>
 
@@ -148,7 +148,8 @@
 | Действие | Сочетание или жест |
 | :--- | :--- |
 | **Раскрыть / закрепить остров** | <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>I</kbd> *(переназначается в настройках)* или наведение курсора |
-| **Старт Помодоро 25 / пауза таймера** | <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>T</kbd> *(переназначается в настройках)* |
+| **Старт Помодоро / пауза таймера** | <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>T</kbd> *(переназначается в настройках)* |
+| **Режим «Просто капсула» (вкл / выкл)** | <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>M</kbd> *(переназначается, также есть в меню трея)* |
 | **Изменить системную громкость** | Прокрутка **колёсика мыши** над островом *(опционально — и над свёрнутым)* |
 | **Выключить / включить звук (Mute)** | **Средняя кнопка мыши** по острову или кнопка `🔇` в панели звука |
 | **Следующий / предыдущий трек** | Горизонтальный **свайп двумя пальцами** по тачпаду или кнопки плеера |
@@ -163,8 +164,8 @@
 ## 📦 Установка и запуск
 
 1. Скачайте свежую сборку со [страницы релизов](https://github.com/raiyaxkrash/dynamic-island/releases/latest):
-   - **`Dynamic-Island-0.5.1-x64-setup.exe`** — классический установщик с ярлыками и удалением через систему.
-   - **`dynamic-island-0.5.1-x64-portable.exe`** — портативный один файл (можно положить в любую папку и сразу запустить).
+   - **`Dynamic-Island-0.6.0-x64-setup.exe`** — классический установщик с ярлыками и удалением через систему.
+   - **`dynamic-island-0.6.0-x64-portable.exe`** — портативный один файл (можно положить в любую папку и сразу запустить).
 2. После запуска остров появится у верхнего края экрана, а его значок — в системном трее Windows (левый клик по значку в трее открывает окно настроек).
 
 > [!NOTE]
