@@ -53,6 +53,8 @@ pub struct Shared {
     pub interactive: AtomicBool,
     /// Позиция или масштаб окна изменились — потоку `hover` пора перечитать геометрию.
     pub geom_dirty: AtomicBool,
+    /// Пользователь явно скрыл остров через пункт меню в системном трее.
+    pub user_hidden: AtomicBool,
     pub settings: Mutex<Settings>,
     pub stats: Mutex<Stats>,
     pub shelf: Mutex<Vec<ShelfItem>>,
@@ -470,9 +472,9 @@ fn show_settings(app: &AppHandle) {
     });
 }
 
-/// Ставит окно у верхнего края указанного монитора с учётом выравнивания (`left`/`center`/`right`) и верхней панели задач.
-pub(crate) fn place_on(win: &WebviewWindow, mon: &Monitor, align: &str) {
-    let Ok(size) = win.outer_size() else { return };
+/// Вычисляет целевые физические координаты окна острова у верхнего края монитора.
+pub(crate) fn expected_pos(win: &WebviewWindow, mon: &Monitor, align: &str) -> Option<(i32, i32)> {
+    let size = win.outer_size().ok()?;
     let mx = mon.position().x;
     let mw = mon.size().width as i32;
     let sw = size.width as i32;
@@ -484,7 +486,14 @@ pub(crate) fn place_on(win: &WebviewWindow, mon: &Monitor, align: &str) {
     };
     let wa_top = mon.work_area().position.y;
     let y = if wa_top > mon.position().y { wa_top } else { mon.position().y };
+    Some((x, y))
+}
+
+/// Ставит окно у верхнего края указанного монитора с учётом выравнивания (`left`/`center`/`right`) и верхней панели задач.
+pub(crate) fn place_on(win: &WebviewWindow, mon: &Monitor, align: &str) {
+    let Some((x, y)) = expected_pos(win, mon, align) else { return };
     let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
+    hover::raise_topmost(win);
     if let Some(shared) = win.app_handle().try_state::<Shared>() {
         shared.geom_dirty.store(true, Ordering::Relaxed);
     }
@@ -516,10 +525,7 @@ fn sync_tray_labels(app: &AppHandle) {
         let s = lock(&shared.settings);
         (s.effective_lang() == "en", s.capsule_only)
     };
-    let visible = app
-        .get_webview_window("island")
-        .and_then(|w| w.is_visible().ok())
-        .unwrap_or(true);
+    let visible = !shared.user_hidden.load(Ordering::Relaxed);
     if let Some((settings_i, capsule_i, toggle_i, quit_i)) = lock(&shared.tray_items).as_ref() {
         let _ = settings_i.set_text(if en { "Settings…" } else { "Настройки…" });
         let _ = capsule_i.set_text(match (en, capsule) {
@@ -568,10 +574,13 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
             "capsule" => toggle_capsule_mode(app),
             "toggle" => {
                 if let Some(w) = app.get_webview_window("island") {
-                    let visible = w.is_visible().unwrap_or(true);
-                    if visible {
+                    let shared = app.state::<Shared>();
+                    let hide_now = !shared.user_hidden.load(Ordering::Relaxed);
+                    shared.user_hidden.store(hide_now, Ordering::Relaxed);
+                    if hide_now {
                         let _ = w.hide();
                     } else {
+                        let _ = w.unminimize();
                         let _ = w.show();
                         place(&w);
                     }
