@@ -24,7 +24,7 @@
     idle: [124, 30, 15],
     mini: [206, 32, 16],
     tmini: [150, 32, 16],
-    home: [456, 116, 30],
+    home: [480, 116, 30],
     music: [392, 166, 38],
     audio: [340, 120, 26],
     shelf: [392, 132, 28],
@@ -57,6 +57,7 @@
   const st = {
     media: { active: false },
     mediaHidden: false,
+    preferHome: false,
     power: null,
     volume: null,
     hover: false,
@@ -207,7 +208,7 @@
     return maxH ? Math.min(h, maxH) : h;
   }
   function sizeOf(m) {
-    if (m === 'home') return [456, measureHeight($$home), 30];
+    if (m === 'home') return [480, measureHeight($$home), 30];
     if (m === 'audio') return [340, measureHeight(document.querySelector('[data-view="audio"]'), 172), 26];
     if (m === 'shelf') return [392, measureHeight(document.querySelector('[data-view="shelf"]'), 172), 28];
     if (m === 'clips') return [392, measureHeight(document.querySelector('[data-view="clips"]'), 172), 28];
@@ -235,7 +236,7 @@
     if (st.hud && (st.hud.force || !expanded)) return st.hud.type;
     if (expanded) {
       if (st.subview) return st.subview;
-      return st.media.active && !st.mediaHidden ? 'music' : 'home';
+      return st.media.active && !st.mediaHidden && !st.preferHome ? 'music' : 'home';
     }
     const c = compact();
     if (c === 'sliver' && st.pending) return 'sliverHot';
@@ -248,7 +249,7 @@
     island.dataset.mode = m;
     island.classList.toggle('playing', !!st.media.playing && !st.mediaHidden);
     island.classList.toggle('drag-over', !!st.dragHover);
-    mediaRestore.hidden = !st.mediaHidden;
+    mediaRestore.hidden = !(st.media.active && (st.mediaHidden || st.preferHome));
     const [w, h, r] = sizeOf(m);
     if (m === 'home' || m === 'audio' || m === 'shelf' || m === 'clips') {
       const viewEl = document.querySelector(`[data-view="${m}"]`);
@@ -598,7 +599,9 @@
     else if (a === 'mute-toggle') invoke('volume_mute_toggle').catch(() => {});
     else if (a === 'toggle-dnd') {
       st.dnd = !st.dnd;
+      st.settings.dnd = st.dnd;
       $('dndBtn').classList.toggle('on', st.dnd);
+      invoke('set_setting', { key: 'dnd', value: st.dnd }).catch(() => {});
     }
     else if (a === 'open-update') {
       if (st.update && st.update.url) invoke('open_release_url', { url: st.update.url }).catch(() => {});
@@ -612,17 +615,29 @@
     else if (a === 'clips-clear') invoke('clips_clear').catch(() => {});
     else if (a === 'clip-pick') {
       const idx = +b.dataset.idx;
-      const txt = st.clips[idx];
-      if (txt) {
-        invoke('clip_copy', { text: txt }).then(() => {
+      const item = st.clips[idx];
+      if (item) {
+        const payload = typeof item === 'string' ? { text: item } : { id: item.id, text: item.kind === 'text' ? item.text : null };
+        invoke('clip_copy', payload).then((ok) => {
+          if (ok === false) return;
           const chk = b.querySelector('.adev-chk');
           if (chk) { chk.textContent = '✓'; setTimeout(() => { chk.textContent = ''; }, 900); }
         }).catch(() => {});
       }
     }
     else if (a === 'cycle-media') invoke('media_cycle').catch(() => {});
-    else if (a === 'hide-media' || a === 'show-media') {
-      st.mediaHidden = a === 'hide-media';
+    else if (a === 'go-home') {
+      st.preferHome = true;
+      st.subview = null;
+      render();
+    }
+    else if (a === 'hide-media') {
+      st.mediaHidden = true;
+      render();
+    }
+    else if (a === 'show-media' || a === 'go-music') {
+      st.preferHome = false;
+      st.mediaHidden = false;
       render();
     }
     else media(a);
@@ -642,10 +657,14 @@
     }
   });
 
-  // Колёсико — громкость. Горизонтальный свайп двумя пальцами по тачпаду — переключение трека.
+  // Колёсико — громкость (кроме прокручиваемых списков). Горизонтальный свайп — переключение трека.
   let swipeAcc = 0;
   let swipeLock = 0;
   island.addEventListener('wheel', (e) => {
+    const scrollBox = e.target.closest('.audio-list, .shelf-grid');
+    if (scrollBox && scrollBox.scrollHeight > scrollBox.clientHeight) {
+      return;
+    }
     if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
       if (!st.media.active || st.mediaHidden || Date.now() < swipeLock) return;
       swipeAcc += e.deltaX;
@@ -661,6 +680,17 @@
   }, { passive: true });
 
   // ---------- громкость ----------
+  let volDragging = false;
+  let volSendAt = 0;
+  const aVolHit = $('aVolHit');
+  function paintAudioVol(level, muted) {
+    const muteBtn = $('muteBtn');
+    if (muteBtn) muteBtn.classList.toggle('muted', !!muted || level === 0);
+    const fill = $('aVolFill');
+    if (fill) fill.style.transform = `scaleX(${muted ? 0 : Math.min(Math.max(level / 100, 0), 1)})`;
+    const pct = $('aVolPct');
+    if (pct) pct.textContent = (muted ? 0 : level) + '%';
+  }
   function applyVolume(v) {
     st.volume = v;
     const view = island.querySelector('.v-volume');
@@ -668,6 +698,37 @@
     view.classList.toggle('lowvol', v.level < 40);
     $('vFill').style.transform = `scaleX(${v.muted ? 0 : v.level / 100})`;
     $('vPct').textContent = v.muted ? '0' : v.level;
+    if (!volDragging) paintAudioVol(v.level, v.muted);
+  }
+  if (aVolHit) {
+    const fracOf = (e) => {
+      const r = aVolHit.getBoundingClientRect();
+      return Math.min(Math.max((e.clientX - r.left) / (r.width || 1), 0), 1);
+    };
+    const pushVol = (f, force) => {
+      const lvl = Math.round(f * 100);
+      paintAudioVol(lvl, lvl === 0);
+      const now = performance.now();
+      if (force || now - volSendAt > 35) {
+        volSendAt = now;
+        invoke('volume_set', { level: f }).catch(() => {});
+      }
+    };
+    aVolHit.addEventListener('pointerdown', (e) => {
+      volDragging = true;
+      aVolHit.classList.add('drag');
+      aVolHit.setPointerCapture(e.pointerId);
+      pushVol(fracOf(e), true);
+    });
+    aVolHit.addEventListener('pointermove', (e) => {
+      if (volDragging) pushVol(fracOf(e), false);
+    });
+    aVolHit.addEventListener('pointerup', (e) => {
+      if (!volDragging) return;
+      volDragging = false;
+      aVolHit.classList.remove('drag');
+      pushVol(fracOf(e), true);
+    });
   }
 
   // ---------- батарея ----------
@@ -736,6 +797,8 @@
     $('tCustomVal').title = T('custom_hint');
     $('privLine').title = T('privacy_tip');
     $('mediaRestore').title = $('mediaRestore').ariaLabel = T('restore_player');
+    const hubBtn = $('musicHubBtn');
+    if (hubBtn) hubBtn.title = hubBtn.ariaLabel = T('hide_player');
     $('soundSettingsBtn').title = $('soundSettingsBtn').ariaLabel = T('sound_settings');
     $('muteBtn').title = $('muteBtn').ariaLabel = T('mute_toggle');
     $('shelfBtn').title = $('shelfBtn').ariaLabel = T('shelf_open');
@@ -763,6 +826,10 @@
     st.settings = v || st.settings;
     reduceMotion = st.settings.animations === false;
     if (st.settings.dwell_ms) DWELL.busy = st.settings.dwell_ms;
+    if (typeof st.settings.dnd === 'boolean') {
+      st.dnd = st.settings.dnd;
+      $('dndBtn').classList.toggle('on', st.dnd);
+    }
     island.dataset.border = st.settings.border_style || 'subtle';
     $('sysRow').hidden = st.settings.sysload === false;
     if (st.device) $('devChip').hidden = st.settings.devices === false;
@@ -854,6 +921,7 @@
       rm.dataset.path = item.path;
       rm.textContent = '×';
       chip.append(ico, name, rm);
+      let clickTimer = null;
       chip.addEventListener('pointerdown', (e) => {
         if (e.button !== 0 || e.target.closest('.shelf-x')) return;
         const x0 = e.clientX, y0 = e.clientY;
@@ -861,13 +929,26 @@
         const onMove = (ev) => {
           if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 6) {
             dragged = true;
+            clearTimeout(clickTimer);
+            clickTimer = null;
             cleanup();
             invoke('shelf_drag', { path: item.path }).catch(() => {});
           }
         };
-        const onUp = () => {
+        const onUp = (ev) => {
           cleanup();
-          if (!dragged) invoke('shelf_reveal', { path: item.path }).catch(() => {});
+          if (dragged) return;
+          if (ev.detail >= 2) {
+            clearTimeout(clickTimer);
+            clickTimer = null;
+            invoke('shelf_open', { path: item.path }).catch(() => {});
+          } else {
+            clearTimeout(clickTimer);
+            clickTimer = setTimeout(() => {
+              clickTimer = null;
+              invoke('shelf_reveal', { path: item.path }).catch(() => {});
+            }, 210);
+          }
         };
         const cleanup = () => {
           window.removeEventListener('pointermove', onMove);
@@ -890,15 +971,50 @@
     $('clipsEmpty').hidden = st.clips.length > 0;
     const list = $('clipsList');
     list.innerHTML = '';
-    st.clips.forEach((txt, i) => {
+    st.clips.forEach((raw, i) => {
+      const item = typeof raw === 'string' ? { id: i + 1, kind: 'text', text: raw } : raw;
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'adev';
       btn.dataset.a = 'clip-pick';
       btn.dataset.idx = String(i);
-      btn.title = txt.slice(0, 300);
-      btn.innerHTML = '<span class="adev-name"></span><span class="adev-chk"></span>';
-      btn.querySelector('.adev-name').textContent = txt.replace(/\s+/g, ' ').trim();
+      if (item.kind === 'image') {
+        btn.title = T('clip_img_tip', { dim: item.text || 'PNG' });
+        if (item.preview) {
+          const img = document.createElement('img');
+          img.className = 'clip-thumb';
+          img.src = item.preview;
+          img.alt = '';
+          btn.appendChild(img);
+        }
+        const name = document.createElement('span');
+        name.className = 'adev-name';
+        name.textContent = `${T('image')} · ${item.text || 'PNG'}`;
+        const chk = document.createElement('span');
+        chk.className = 'adev-chk';
+        btn.append(name, chk);
+        btn.addEventListener('pointerdown', (e) => {
+          if (e.button !== 0) return;
+          const x0 = e.clientX, y0 = e.clientY;
+          const onMove = (ev) => {
+            if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 6) {
+              cleanup();
+              invoke('clip_drag', { id: item.id }).catch(() => {});
+            }
+          };
+          const cleanup = () => {
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', cleanup);
+          };
+          window.addEventListener('pointermove', onMove);
+          window.addEventListener('pointerup', cleanup);
+        });
+      } else {
+        const txt = item.text || '';
+        btn.title = txt.slice(0, 300);
+        btn.innerHTML = '<span class="adev-name"></span><span class="adev-chk"></span>';
+        btn.querySelector('.adev-name').textContent = txt.replace(/\s+/g, ' ').trim();
+      }
       list.appendChild(btn);
     });
     render();
@@ -984,13 +1100,28 @@
       hoverTimer = setTimeout(() => { st.pending = false; st.hover = true; render(); }, st.topbusy ? DWELL.busy : DWELL.normal);
     } else {
       if (st.pending) { st.pending = false; render(); }
-      if (st.hover || st.pinned) hoverTimer = setTimeout(() => { st.hover = false; st.pinned = false; st.subview = null; render(); }, 220);
+      if (st.hover) {
+        hoverTimer = setTimeout(() => {
+          st.hover = false;
+          if (!st.pinned) {
+            st.subview = null;
+            st.preferHome = false;
+          }
+          render();
+        }, 220);
+      }
     }
   }
   function onHotkey(kind) {
     if (kind === 'toggle') {
-      if (st.hover || st.pinned) { st.hover = false; st.pinned = false; st.subview = null; }
-      else { st.pinned = true; }
+      if (st.pinned) {
+        st.pinned = false;
+        st.hover = false;
+        st.subview = null;
+        st.preferHome = false;
+      } else {
+        st.pinned = true;
+      }
       render();
     } else if (kind === 'timer') {
       if (timer.running()) pauseTimer();

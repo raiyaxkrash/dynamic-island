@@ -101,6 +101,8 @@
     }
     .kbtn:hover, .actbtn:hover { background: rgba(255, 255, 255, 0.14); }
     .kbtn.rec { border-color: var(--on); color: var(--on); background: rgba(10, 132, 255, 0.14); }
+    .kbtn.err { border-color: #ff9f0a; color: #ff9f0a; background: rgba(255, 159, 10, 0.12); }
+    .d.err { color: #ff9f0a; }
     .actbtn.accent { border-color: transparent; background: var(--on); color: #fff; }
 
     footer { flex: none; padding: 12px 20px 16px; font-size: 11.5px; color: var(--dim); display: flex; justify-content: space-between; border-top: 1px solid var(--line); }
@@ -217,6 +219,10 @@
           <div class="txt"><div class="t" data-i18n="s_sysload">Загрузка системы</div><div class="d" data-i18n="s_sysload_d">Процессор и память при наведении</div></div>
           <span class="sw"><input type="checkbox" id="sysload" data-key="sysload"><span></span></span>
         </label>
+        <label class="row" for="dnd">
+          <div class="txt"><div class="t" data-i18n="s_dnd">Тихий режим (Не беспокоить)</div><div class="d" data-i18n="s_dnd_d">Постоянно скрывать мелкие всплывающие подсказки (кнопка 🌙)</div></div>
+          <span class="sw"><input type="checkbox" id="dnd" data-key="dnd"><span></span></span>
+        </label>
       </div>
     </section>
 
@@ -317,6 +323,9 @@
         }
         for (const b of hkBtns) {
           if (recording !== b) b.textContent = s[b.dataset.hk] || '';
+          const ok = s[b.dataset.hk + '_ok'] !== false;
+          b.classList.toggle('err', !ok && !!s.hotkeys);
+          b.title = !ok && !!s.hotkeys ? T('s_hk_busy') : '';
         }
         document.getElementById('ver').textContent = T('s_ver', { v: s.version || '' });
         document.getElementById('pomoStats').textContent = T('s_pomo_fmt', {
@@ -350,6 +359,8 @@
         if (k.startsWith('Key')) k = k.slice(3);
         else if (k.startsWith('Digit')) k = k.slice(5);
         else if (e.key === ' ') k = 'Space';
+        else if (e.key === 'Enter') k = 'Enter';
+        else if (e.key === 'Tab') k = 'Tab';
         else if (/^F([1-9]|1[0-2])$/i.test(e.key)) k = e.key.toUpperCase();
         else return null;
         return [...mods, k].join('+');
@@ -370,6 +381,7 @@
           return;
         }
         updBtn.disabled = true;
+        updStatus.classList.remove('err');
         updStatus.textContent = T('s_upd_checking');
         try {
           const info = await invoke('check_update');
@@ -378,11 +390,15 @@
             updStatus.textContent = T('s_upd_avail', { v: info.version });
             updBtn.textContent = T('s_upd_avail', { v: info.version });
             updBtn.classList.add('accent');
+          } else if (info && info.error) {
+            updStatus.classList.add('err');
+            updStatus.textContent = info.error === 'rate_limit' ? T('s_upd_rate') : T('s_upd_err');
           } else {
             updStatus.textContent = T('s_upd_latest');
           }
         } catch {
-          updStatus.textContent = '';
+          updStatus.classList.add('err');
+          updStatus.textContent = T('s_upd_err');
         } finally {
           updBtn.disabled = false;
         }
@@ -401,6 +417,16 @@
           const combo = keyLabel(e);
           if (combo) {
             const btn = recording;
+            const otherKey = btn.dataset.hk === 'hotkey_toggle' ? 'hotkey_timer' : 'hotkey_toggle';
+            if ((cur[otherKey] || '').toLowerCase() === combo.toLowerCase()) {
+              btn.classList.remove('rec');
+              btn.classList.add('err');
+              btn.textContent = cur[btn.dataset.hk] || '';
+              btn.title = T('s_hk_dup');
+              recording = null;
+              setTimeout(() => fill(cur), 1400);
+              return;
+            }
             recording = null;
             btn.classList.remove('rec');
             set(btn.dataset.hk, combo);
@@ -410,6 +436,11 @@
         if (e.key === 'Escape') win.close();
       });
 
+      if (window.__TAURI__.event) {
+        window.__TAURI__.event.listen('settings', () => {
+          invoke('get_settings').then(fill).catch(() => {});
+        });
+      }
       invoke('get_settings').then(fill).catch(() => {});
     })();
   </script>

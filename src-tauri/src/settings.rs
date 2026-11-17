@@ -54,6 +54,8 @@ pub struct Settings {
     pub border_style: String,
     /// Не показывать второстепенные уведомления во время активного помодоро.
     pub quiet_pomo: bool,
+    /// Ручной «Тихий режим» (🌙), сохраняемый между перезапусками.
+    pub dnd: bool,
 }
 
 impl Settings {
@@ -92,6 +94,7 @@ impl Default for Settings {
             hotkey_timer: "Ctrl+Alt+T".to_string(),
             border_style: "subtle".to_string(),
             quiet_pomo: false,
+            dnd: false,
         }
     }
 }
@@ -134,25 +137,25 @@ pub fn record_pomodoro(s: &mut Stats, today: &str) {
     s.history.insert(today.to_string(), s.pomodoros);
 }
 
-/// Возвращает `(за_сегодня, за_последние_7_записей_или_дней, текущая_серия_дней)`.
+/// Возвращает `(за_сегодня, за_последние_7_календарных_дней, текущая_серия_дней)`.
 pub fn stats_summary(s: &Stats, today: &str) -> (u32, u32, u32) {
     let today_count = if s.date == today { s.pomodoros } else { *s.history.get(today).unwrap_or(&0) };
-    let week: u32 = s
-        .history
-        .iter()
-        .rev()
-        .take(7)
-        .map(|(_, &v)| v)
-        .sum();
-    let week = if s.history.contains_key(today) { week } else { week + today_count };
+    let count_of = |d: (i32, u32, u32)| -> u32 {
+        let k = format!("{:04}-{:02}-{:02}", d.0, d.1, d.2);
+        if k == today { today_count } else { *s.history.get(&k).unwrap_or(&0) }
+    };
 
-    // Серия: считаем подряд идущие календарные даты с >0 помодоро (от today или вчера).
+    let mut week = 0u32;
     let mut streak = 0u32;
-    if let Some(mut day) = parse_ymd(today) {
-        let count_of = |d: (i32, u32, u32)| -> u32 {
-            let k = format!("{:04}-{:02}-{:02}", d.0, d.1, d.2);
-            if k == today { today_count } else { *s.history.get(&k).unwrap_or(&0) }
-        };
+    if let Some(start) = parse_ymd(today) {
+        let mut cur = Some(start);
+        for _ in 0..7 {
+            let Some(d) = cur else { break };
+            week += count_of(d);
+            cur = prev_day(d);
+        }
+
+        let mut day = start;
         if count_of(day) == 0 {
             if let Some(prev) = prev_day(day) {
                 day = prev;
@@ -163,6 +166,8 @@ pub fn stats_summary(s: &Stats, today: &str) -> (u32, u32, u32) {
             let Some(prev) = prev_day(day) else { break };
             day = prev;
         }
+    } else {
+        week = today_count;
     }
     (today_count, week, streak)
 }
@@ -315,6 +320,10 @@ mod tests {
         assert!(roll_stats(&mut s, "2026-11-18"));
         assert_eq!(s.pomodoros, 0);
         // Вчерашняя серия ещё жива до конца сегодняшнего дня.
+        assert_eq!(stats_summary(&s, "2026-11-18"), (0, 7, 3));
+
+        // Давняя запись за пределами 7 календарных дней не должна попадать в week.
+        s.history.insert("2026-11-01".to_string(), 10);
         assert_eq!(stats_summary(&s, "2026-11-18"), (0, 7, 3));
     }
 }

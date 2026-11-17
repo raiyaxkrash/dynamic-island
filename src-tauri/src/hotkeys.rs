@@ -20,6 +20,8 @@ const HK_TIMER: i32 = 2;
 const WM_SYNC_HOTKEYS: u32 = WM_APP + 1;
 
 static HOTKEY_HWND: AtomicIsize = AtomicIsize::new(0);
+static TOGGLE_OK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+static TIMER_OK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
 thread_local! {
     static APP: RefCell<Option<AppHandle>> = const { RefCell::new(None) };
@@ -71,13 +73,15 @@ pub fn parse_hotkey(spec: &str) -> Option<(u32, u32)> {
     Some((mods, code))
 }
 
-unsafe fn register_one(hwnd: HWND, id: i32, spec: &str) {
-    let Some((mods, vk)) = parse_hotkey(spec) else { return };
+unsafe fn register_one(hwnd: HWND, id: i32, spec: &str) -> bool {
+    let Some((mods, vk)) = parse_hotkey(spec) else { return false };
     if RegisterHotKey(Some(hwnd), id, HOT_KEY_MODIFIERS(mods), vk).is_err() {
         APP.with(|c| {
             crate::log_err(c.borrow().as_ref(), &format!("RegisterHotKey {spec} failed"));
         });
+        return false;
     }
+    true
 }
 
 unsafe fn apply_registration(hwnd: HWND) {
@@ -87,11 +91,24 @@ unsafe fn apply_registration(hwnd: HWND) {
         if let Some(app) = c.borrow().as_ref() {
             let s = crate::lock(&app.state::<Shared>().settings).clone();
             if s.hotkeys {
-                register_one(hwnd, HK_TOGGLE, &s.hotkey_toggle);
-                register_one(hwnd, HK_TIMER, &s.hotkey_timer);
+                let ok1 = register_one(hwnd, HK_TOGGLE, &s.hotkey_toggle);
+                let ok2 = if s.hotkey_timer.eq_ignore_ascii_case(&s.hotkey_toggle) {
+                    false
+                } else {
+                    register_one(hwnd, HK_TIMER, &s.hotkey_timer)
+                };
+                TOGGLE_OK.store(ok1, Ordering::Relaxed);
+                TIMER_OK.store(ok2, Ordering::Relaxed);
+            } else {
+                TOGGLE_OK.store(true, Ordering::Relaxed);
+                TIMER_OK.store(true, Ordering::Relaxed);
             }
         }
     });
+}
+
+pub fn status() -> (bool, bool) {
+    (TOGGLE_OK.load(Ordering::Relaxed), TIMER_OK.load(Ordering::Relaxed))
 }
 
 unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {

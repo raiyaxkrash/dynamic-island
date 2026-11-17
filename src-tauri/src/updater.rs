@@ -5,8 +5,9 @@ use serde_json::Value;
 use windows::core::{w, HSTRING, PCWSTR};
 use windows::Win32::Networking::WinHttp::{
     WinHttpCloseHandle, WinHttpConnect, WinHttpOpen, WinHttpOpenRequest, WinHttpQueryDataAvailable,
-    WinHttpReadData, WinHttpReceiveResponse, WinHttpSendRequest, WinHttpSetTimeouts,
-    WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_FLAG_SECURE,
+    WinHttpQueryHeaders, WinHttpReadData, WinHttpReceiveResponse, WinHttpSendRequest,
+    WinHttpSetTimeouts, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_FLAG_SECURE,
+    WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_QUERY_STATUS_CODE,
 };
 
 const REPO_HOST: &str = "api.github.com";
@@ -19,6 +20,7 @@ pub struct UpdateInfo {
     pub version: String,
     pub current: String,
     pub url: String,
+    pub error: Option<String>,
 }
 
 fn parse_semver(s: &str) -> Option<(u32, u32, u32)> {
@@ -46,27 +48,28 @@ pub fn parse_latest_release(body: &str, current: &str) -> Option<UpdateInfo> {
         version: tag.trim_start_matches('v').to_string(),
         current: current.to_string(),
         url,
+        error: None,
     })
 }
 
-fn fetch_latest_json() -> Option<String> {
+fn fetch_latest_json() -> Result<String, &'static str> {
     unsafe {
         let session = WinHttpOpen(
-            w!("DynamicIslandUpdater/0.1"),
+            w!("DynamicIslandUpdater/0.4"),
             WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
             PCWSTR::null(),
             PCWSTR::null(),
             0,
         );
         if session.is_null() {
-            return None;
+            return Err("network");
         }
         let _ = WinHttpSetTimeouts(session, 4000, 4000, 5000, 5000);
         let host = HSTRING::from(REPO_HOST);
         let conn = WinHttpConnect(session, PCWSTR(host.as_ptr()), 443, 0);
         if conn.is_null() {
             let _ = WinHttpCloseHandle(session);
-            return None;
+            return Err("network");
         }
         let path = HSTRING::from(REPO_PATH);
         let req = WinHttpOpenRequest(
@@ -81,7 +84,7 @@ fn fetch_latest_json() -> Option<String> {
         if req.is_null() {
             let _ = WinHttpCloseHandle(conn);
             let _ = WinHttpCloseHandle(session);
-            return None;
+            return Err("network");
         }
 
         let headers: Vec<u16> = "Accept: application/vnd.github+json\r\n"
@@ -91,44 +94,82 @@ fn fetch_latest_json() -> Option<String> {
         let ok = WinHttpSendRequest(req, Some(&headers[..headers.len() - 1]), None, 0, 0, 0).is_ok()
             && WinHttpReceiveResponse(req, std::ptr::null_mut()).is_ok();
 
+        if !ok {
+            let _ = WinHttpCloseHandle(req);
+            let _ = WinHttpCloseHandle(conn);
+            let _ = WinHttpCloseHandle(session);
+            return Err("network");
+        }
+
+        let mut status: u32 = 0;
+        let mut status_len = std::mem::size_of::<u32>() as u32;
+        let status_ok = WinHttpQueryHeaders(
+            req,
+            WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+            PCWSTR::null(),
+            Some(&mut status as *mut u32 as *mut _),
+            &mut status_len,
+            std::ptr::null_mut(),
+        )
+        .is_ok();
+
+        if status_ok && (status == 403 || status == 429) {
+            let _ = WinHttpCloseHandle(req);
+            let _ = WinHttpCloseHandle(conn);
+            let _ = WinHttpCloseHandle(session);
+            return Err("rate_limit");
+        }
+        if !status_ok || status != 200 {
+            let _ = WinHttpCloseHandle(req);
+            let _ = WinHttpCloseHandle(conn);
+            let _ = WinHttpCloseHandle(session);
+            return Err("network");
+        }
+
         let mut out = Vec::new();
-        if ok {
-            loop {
-                let mut avail = 0u32;
-                if WinHttpQueryDataAvailable(req, &mut avail).is_err() || avail == 0 {
-                    break;
-                }
-                let to_read = avail.min(16384);
-                let mut chunk = vec![0u8; to_read as usize];
-                let mut read = 0u32;
-                if WinHttpReadData(req, chunk.as_mut_ptr() as *mut _, to_read, &mut read).is_err()
-                    || read == 0
-                {
-                    break;
-                }
-                out.extend_from_slice(&chunk[..read as usize]);
-                if out.len() > 256 * 1024 {
-                    break;
-                }
+        loop {
+            let mut avail = 0u32;
+            if WinHttpQueryDataAvailable(req, &mut avail).is_err() || avail == 0 {
+                break;
+            }
+            let to_read = avail.min(16384);
+            let mut chunk = vec![0u8; to_read as usize];
+            let mut read = 0u32;
+            if WinHttpReadData(req, chunk.as_mut_ptr() as *mut _, to_read, &mut read).is_err()
+                || read == 0
+            {
+                break;
+            }
+            out.extend_from_slice(&chunk[..read as usize]);
+            if out.len() > 256 * 1024 {
+                break;
             }
         }
 
         let _ = WinHttpCloseHandle(req);
         let _ = WinHttpCloseHandle(conn);
         let _ = WinHttpCloseHandle(session);
-        String::from_utf8(out).ok()
+        String::from_utf8(out).map_err(|_| "parse")
     }
 }
 
 pub fn check(current: &str) -> UpdateInfo {
-    fetch_latest_json()
-        .and_then(|json| parse_latest_release(&json, current))
-        .unwrap_or_else(|| UpdateInfo {
+    match fetch_latest_json() {
+        Ok(json) => parse_latest_release(&json, current).unwrap_or_else(|| UpdateInfo {
             available: false,
             version: current.to_string(),
             current: current.to_string(),
             url: format!("{RELEASES_PREFIX}releases/latest"),
-        })
+            error: Some("parse".to_string()),
+        }),
+        Err(code) => UpdateInfo {
+            available: false,
+            version: current.to_string(),
+            current: current.to_string(),
+            url: format!("{RELEASES_PREFIX}releases/latest"),
+            error: Some(code.to_string()),
+        },
+    }
 }
 
 pub fn allowed_release_url(url: &str) -> bool {
@@ -145,6 +186,7 @@ mod tests {
         let info = parse_latest_release(body, "0.1.0").unwrap();
         assert!(info.available);
         assert_eq!(info.version, "0.2.0");
+        assert!(info.error.is_none());
 
         let same = parse_latest_release(r#"{"tag_name":"v0.1.0","html_url":"https://evil.example"}"#, "0.1.0").unwrap();
         assert!(!same.available);

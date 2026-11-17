@@ -49,7 +49,7 @@ pub struct Shared {
     pub settings: Mutex<Settings>,
     pub stats: Mutex<Stats>,
     pub shelf: Mutex<Vec<ShelfItem>>,
-    pub clips: Mutex<Vec<String>>,
+    pub clips: Mutex<Vec<clipboard::ClipItem>>,
     pub tray_items: Mutex<Option<TrayItems>>,
     pub snap: Mutex<Map<String, Value>>,
 }
@@ -202,6 +202,11 @@ fn shelf_reveal(path: String) {
 }
 
 #[tauri::command]
+fn shelf_open(path: String) {
+    shelf::open_file(path);
+}
+
+#[tauri::command]
 fn shelf_from_clipboard(app: AppHandle) -> bool {
     let paths = clipboard::read_files();
     if paths.is_empty() {
@@ -219,19 +224,49 @@ fn shelf_from_clipboard(app: AppHandle) -> bool {
 }
 
 #[tauri::command]
-fn clip_copy(text: String) -> bool {
-    clipboard::write_text(&text)
+fn clip_copy(state: tauri::State<Shared>, id: Option<u64>, text: Option<String>) -> bool {
+    if let Some(target_id) = id {
+        let found = lock(&state.clips).iter().find(|c| c.id == target_id).cloned();
+        if let Some(item) = found {
+            return if item.kind == "image" {
+                item.png.as_deref().is_some_and(clipboard::write_image)
+            } else {
+                clipboard::write_text(&item.text)
+            };
+        }
+    }
+    if let Some(t) = text {
+        return clipboard::write_text(&t);
+    }
+    false
+}
+
+#[tauri::command]
+fn clip_drag(state: tauri::State<Shared>, id: u64) {
+    let png = lock(&state.clips)
+        .iter()
+        .find(|c| c.id == id && c.kind == "image")
+        .and_then(|c| c.png.clone());
+    if let Some(bytes) = png {
+        clipboard::drag_image(id, &bytes);
+    }
 }
 
 #[tauri::command]
 fn clips_clear(app: AppHandle) {
     lock(&app.state::<Shared>().clips).clear();
+    clipboard::clear_temp_files();
     publish(&app, "clips", json!([]));
 }
 
 #[tauri::command]
 fn volume_step(delta: f32) {
     audio::step(delta);
+}
+
+#[tauri::command]
+fn volume_set(level: f32) {
+    audio::set_volume(level);
 }
 
 #[tauri::command]
@@ -267,11 +302,14 @@ fn get_settings(state: tauri::State<Shared>) -> Value {
     let mut v = json!(*lock(&state.settings));
     let stats = lock(&state.stats);
     let (today, week, streak) = settings::stats_summary(&stats, &sysinfo::today());
+    let (hk_toggle_ok, hk_timer_ok) = hotkeys::status();
     v["autostart"] = json!(settings::autostart_enabled());
     v["version"] = json!(env!("CARGO_PKG_VERSION"));
     v["pomodoros_today"] = json!(today);
     v["pomodoros_week"] = json!(week);
     v["pomodoros_streak"] = json!(streak);
+    v["hotkey_toggle_ok"] = json!(hk_toggle_ok);
+    v["hotkey_timer_ok"] = json!(hk_timer_ok);
     v
 }
 
@@ -300,6 +338,13 @@ fn set_setting(app: AppHandle, key: String, value: Value) -> Value {
                 if !matches!(updated.border_style.as_str(), "subtle" | "glow" | "none") {
                     updated.border_style = "subtle".to_string();
                 }
+                if matches!(key.as_str(), "hotkey_toggle" | "hotkey_timer")
+                    && updated.hotkey_toggle.eq_ignore_ascii_case(&updated.hotkey_timer)
+                {
+                    // Не допускаем одинакового сочетания на оба действия.
+                    updated.hotkey_toggle = s.hotkey_toggle.clone();
+                    updated.hotkey_timer = s.hotkey_timer.clone();
+                }
                 *s = updated;
             }
             s.clone()
@@ -320,6 +365,7 @@ fn set_setting(app: AppHandle, key: String, value: Value) -> Value {
         }
         if matches!(key.as_str(), "hotkeys" | "hotkey_toggle" | "hotkey_timer") {
             hotkeys::sync();
+            std::thread::sleep(std::time::Duration::from_millis(25));
         }
         publish_settings(&app);
     }
@@ -458,6 +504,7 @@ pub fn run() {
             media_seek,
             media_cycle,
             volume_step,
+            volume_set,
             volume_mute_toggle,
             perf,
             pomodoro_done,
@@ -474,8 +521,10 @@ pub fn run() {
             shelf_clear,
             shelf_drag,
             shelf_reveal,
+            shelf_open,
             shelf_from_clipboard,
             clip_copy,
+            clip_drag,
             clips_clear
         ])
         .on_window_event(|win, event| {

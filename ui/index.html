@@ -131,13 +131,13 @@
         </div>
         <div class="m-side">
           <div class="eq"></div>
-          <div class="mchip">
+          <button type="button" class="mchip" data-a="go-home">
             <svg class="ring ring-xs" viewBox="0 0 20 20" aria-hidden="true"><circle class="rbg" cx="10" cy="10" r="8"/><circle class="rfg" cx="10" cy="10" r="8"/></svg>
             <span data-live="tleft">0:00</span>
-          </div>
+          </button>
         </div>
-        <button type="button" class="media-visibility media-hide" data-a="hide-media" aria-label="Скрыть плеер" title="Скрыть плеер">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <button type="button" class="media-visibility media-hide" id="musicHubBtn" data-a="go-home" aria-label="Домашний экран" title="Домашний экран">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="4.5" width="6" height="6" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="13.5" y="4.5" width="6" height="6" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="4.5" y="13.5" width="6" height="6" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="13.5" y="13.5" width="6" height="6" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
         </button>
       </div>
       <div class="m-bar st" style="--i:1" id="bar">
@@ -246,14 +246,19 @@
           <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <span class="p-title" data-i18n="audio_title">Вывод звука</span>
-        <button type="button" class="round sm" data-a="mute-toggle" id="muteBtn" aria-label="Mute">
-          <svg viewBox="0 0 24 24"><path d="M4 9.5h3.2L12 5.6v12.8l-4.8-3.9H4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1Z" fill="currentColor"/><path d="M16 9.5l5 5m0-5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        </button>
         <button type="button" class="round sm" data-a="sound-settings" id="soundSettingsBtn" aria-label="Параметры звука">
           <svg viewBox="0 0 24 24"><path d="M14 5h6v6M20 5l-9 9M10 7H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
       </div>
-      <div class="audio-list" id="audioList"></div>
+      <div class="a-vol">
+        <button type="button" class="round sm mute-btn" data-a="mute-toggle" id="muteBtn" aria-label="Mute">
+          <svg class="i-unmuted" viewBox="0 0 24 24"><path d="M4 9.5h3.2L12 5.6v12.8l-4.8-3.9H4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1Z" fill="currentColor"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.8a7.5 7.5 0 0 1 0 10.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <svg class="i-muted" viewBox="0 0 24 24"><path d="M4 9.5h3.2L12 5.6v12.8l-4.8-3.9H4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1Z" fill="currentColor"/><path d="M16 9.5l5 5m0-5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+        <div class="track-hit a-vol-hit" id="aVolHit"><div class="track"><div class="fill" id="aVolFill"></div></div></div>
+        <span class="a-vol-pct" id="aVolPct">100%</span>
+      </div>
+      <div class="audio-list audio-devs" id="audioList"></div>
     </div>
 
     <!-- полка файлов (drag & drop) -->

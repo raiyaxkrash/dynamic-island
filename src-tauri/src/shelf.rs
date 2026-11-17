@@ -1,11 +1,11 @@
 //! Полка для файлов (File Shelf) с сохранением между перезапусками, добавлением из буфера,
-//! показом в Проводнике (`SHOpenFolderAndSelectItems`) и нативным перетаскиванием (`DoDragDrop`).
+//! открытием файла, показом в Проводнике (`SHOpenFolderAndSelectItems`) и перетаскиванием (`DoDragDrop`).
 
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
-use windows::core::{implement, BOOL, HRESULT, HSTRING, PCWSTR};
+use windows::core::{implement, w, BOOL, HRESULT, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, DRAGDROP_S_USEDEFAULTCURSORS, S_OK};
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, IDataObject, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::Ole::{
@@ -14,7 +14,10 @@ use windows::Win32::System::Ole::{
 };
 use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
 use windows::Win32::UI::Shell::Common::ITEMIDLIST;
-use windows::Win32::UI::Shell::{ILCreateFromPathW, ILFree, SHCreateDataObject, SHOpenFolderAndSelectItems};
+use windows::Win32::UI::Shell::{
+    ILCreateFromPathW, ILFree, SHCreateDataObject, SHOpenFolderAndSelectItems, ShellExecuteW,
+};
+use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
 const MAX_ITEMS: usize = 8;
 
@@ -77,6 +80,17 @@ pub fn add_paths(shelf: &mut Vec<ShelfItem>, paths: Vec<PathBuf>) -> bool {
         changed = true;
     }
     changed
+}
+
+/// Открывает сам файл или папку приложением по умолчанию (двойной клик на полке).
+pub fn open_file(path: String) {
+    if !Path::new(&path).exists() {
+        return;
+    }
+    unsafe {
+        let wide = HSTRING::from(path.as_str());
+        let _ = ShellExecuteW(None, w!("open"), PCWSTR(wide.as_ptr()), None, None, SW_SHOWNORMAL);
+    }
 }
 
 /// Открывает Проводник и выделяет указанный файл или папку.

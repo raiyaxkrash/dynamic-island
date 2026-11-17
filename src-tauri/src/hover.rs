@@ -13,6 +13,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
 use windows::Win32::UI::Shell::{
     SHQueryUserNotificationState, QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN,
 };
@@ -124,6 +125,8 @@ pub fn spawn(app: AppHandle) {
         // чтобы не дёргать главный поток, который в это время рисует анимацию.
         let mut geom: Option<(tauri::PhysicalPosition<i32>, f64)> = None;
         let mut screen: Option<(i32, i32, u32, u32, i32, f64)> = None;
+        let mut was_lmb = false;
+        let mut dragging_from_outside = false;
         loop {
             let sleep_ms = if full { 200 } else { 25 };
             std::thread::sleep(Duration::from_millis(sleep_ms));
@@ -200,11 +203,26 @@ pub fn spawn(app: AppHandle) {
             let (px, py) = (p.x as f64, p.y as f64);
             let now = !full && r[2] > 0.0 && px >= x0 && px <= x1 && py >= y0 && py <= y1;
 
+            // Широкая приёмная зона вокруг острова для плавного перетаскивания файлов из Проводника,
+            // даже когда остров сжат в 5-пиксельную полоску над развёрнутым окном.
+            let drop_cx = pos.x as f64 + 274.0 * scale;
+            let in_drop_zone = !full
+                && (px - drop_cx).abs() <= 135.0 * scale
+                && py >= pos.y as f64
+                && py <= pos.y as f64 + 48.0 * scale;
+            let lmb = unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) } < 0;
+            if !lmb {
+                dragging_from_outside = false;
+            } else if !was_lmb && !in_drop_zone {
+                dragging_from_outside = true;
+            }
+            was_lmb = lmb;
+
             if now != inside {
                 inside = now;
                 let _ = app.emit("hover", now);
             }
-            let want = inside && interactive;
+            let want = (inside && interactive) || (dragging_from_outside && in_drop_zone);
             if want != capture {
                 capture = want;
                 let _ = win.set_ignore_cursor_events(!want);

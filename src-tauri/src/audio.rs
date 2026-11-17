@@ -291,6 +291,24 @@ pub fn step(delta: f32) {
     let _ = tx.send(delta);
 }
 
+/// Устанавливает точную громкость `0.0..=1.0` (для ползунка в панели звука).
+pub fn set_volume(level: f32) {
+    let target = level.clamp(0.0, 1.0);
+    std::thread::spawn(move || unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        if let Ok(en) = enumerator() {
+            if let Ok(dev) = default_device(&en) {
+                if let Ok(e) = dev.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None) {
+                    if target > 0.0 && e.GetMute().map(|m| m.as_bool()).unwrap_or(false) {
+                        let _ = e.SetMute(false, std::ptr::null());
+                    }
+                    let _ = e.SetMasterVolumeLevelScalar(target, std::ptr::null());
+                }
+            }
+        }
+    });
+}
+
 /// Переключает системный Mute (вкл/выкл).
 pub fn toggle_mute() {
     std::thread::spawn(|| unsafe {
