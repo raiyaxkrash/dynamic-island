@@ -1,127 +1,268 @@
 <div align="center">
 
-# Dynamic Island для Windows
+<img src="assets/banner.png" alt="Dynamic Island для Windows" width="100%">
 
-**Лёгкая, нативная «пилюля» сверху экрана в стиле iPhone для Windows 10 и 11.**  
-Работает поверх всех окон, пропускает клики сквозь себя в свёрнутом виде и построена на **Tauri 2 + Rust + Win32/WinRT** с пружинной физикой на 60 FPS.
+<br>
 
-[![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D6?style=flat-square&logo=windows)](https://github.com/raiyaxkrash/dynamic-island/releases/latest)
-[![Tauri 2](https://img.shields.io/badge/Tauri-2.x-FFC131?style=flat-square&logo=tauri&logoColor=black)](https://tauri.app/)
+[![Версия](https://img.shields.io/github/v/release/raiyaxkrash/dynamic-island?style=flat-square&logo=github&label=Релиз&color=7c5cff)](https://github.com/raiyaxkrash/dynamic-island/releases/latest)
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011%20(x64)-0078D4?style=flat-square&logo=windows&logoColor=white)](https://github.com/raiyaxkrash/dynamic-island/releases/latest)
+[![Размер](https://img.shields.io/badge/Установщик-1.26%20МБ-30d158?style=flat-square)](https://github.com/raiyaxkrash/dynamic-island/releases/latest)
+[![Tauri 2](https://img.shields.io/badge/Tauri-2.0-FFC131?style=flat-square&logo=tauri&logoColor=black)](https://tauri.app/)
 [![Rust](https://img.shields.io/badge/Rust-Win32%20%2F%20WinRT-DEA584?style=flat-square&logo=rust&logoColor=black)](https://www.rust-lang.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/raiyaxkrash/dynamic-island?style=flat-square&label=Скачать)](https://github.com/raiyaxkrash/dynamic-island/releases/latest)
+[![Лицензия](https://img.shields.io/badge/License-MIT-34c759?style=flat-square)](LICENSE)
 
-<h3>
+<p align="center">
+  <b>🇷🇺 Русский</b> &nbsp;·&nbsp; <a href="README.en.md">🇬🇧 English</a>
+</p>
 
-[⬇️ Скачать установщик (`Dynamic-Island-0.3.0-x64-setup.exe`)](https://github.com/raiyaxkrash/dynamic-island/releases/latest)
+<p align="center">
+  <a href="#install">Скачать</a> &nbsp;•&nbsp;
+  <a href="#showcase">Интерфейс</a> &nbsp;•&nbsp;
+  <a href="#features">Возможности</a> &nbsp;•&nbsp;
+  <a href="#controls">Жесты и клавиши</a> &nbsp;•&nbsp;
+  <a href="#architecture">Архитектура</a> &nbsp;•&nbsp;
+  <a href="#build">Сборка</a>
+</p>
 
-</h3>
-
-> **Примечание о Windows SmartScreen:** установщик пока не подписан сертификатом (Authenticode), поэтому при первом запуске Windows может показать предупреждение «Система Windows защитила ваш компьютер» — нажмите **Подробнее → Выполнить в любом случае** (либо соберите из исходников командами ниже).
+<a href="https://github.com/raiyaxkrash/dynamic-island/releases/latest/download/Dynamic-Island-0.3.0-x64-setup.exe"><img src="https://img.shields.io/badge/⬇_Скачать_установщик_(v0.3.0)-x64_.exe-0A84FF?style=for-the-badge" alt="Скачать установщик"></a>&nbsp;&nbsp;<a href="https://github.com/raiyaxkrash/dynamic-island/releases/latest/download/dynamic-island-0.3.0-x64-portable.exe"><img src="https://img.shields.io/badge/📦_Portable_версия-без_установки-2C2C2E?style=for-the-badge" alt="Скачать Portable"></a>
 
 </div>
+
+<br>
+
+<table>
+  <tr>
+    <td width="25%" valign="top">
+      <b>⚡ Событийный Rust-бэкенд</b><br>
+      <sub>Ноль холостых опросов: <code>GSMTC</code>, <code>Core Audio</code>, реестр и питание будят интерфейс только по событию Windows.</sub>
+    </td>
+    <td width="25%" valign="top">
+      <b>🪶 Невесомый и прозрачный</b><br>
+      <sub>Установщик весит <b>1,26 МБ</b> (без Electron). В покое пропускает клики сквозь себя (<code>WS_EX_TRANSPARENT</code>) и прячется в играх.</sub>
+    </td>
+    <td width="25%" valign="top">
+      <b>🌊 Пружинная физика 60 FPS</b><br>
+      <sub>Честная затухающая пружина без рывков при смене цели на лету — работает плавно даже если анимации Windows отключены.</sub>
+    </td>
+    <td width="25%" valign="top">
+      <b>🔒 Приватность из коробки</b><br>
+      <sub>История буфера живёт только в ОЗУ и игнорирует менеджеры паролей. Никакой телеметрии и облаков.</sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
-## Интерфейс
+<a id="showcase"></a>
 
-<div align="center">
+## ✨ Витрина интерфейса
 
-| Плеер с адаптивным эквалайзером и свечением | Домашний экран, помодоро и система |
-| :---: | :---: |
-| ![Плеер Dynamic Island](assets/screenshots/music.png) | ![Домашний экран и помодоро](assets/screenshots/home.png) |
-
-| Переключатель вывода звука и Mute | Полка файлов (Drag & Drop + из буфера) |
-| :---: | :---: |
-| ![Вывод звука](assets/screenshots/audio.png) | ![Полка файлов](assets/screenshots/shelf.png) |
-
-| Быстрая история буфера обмена (в ОЗУ) | Подключение Bluetooth-наушников |
-| :---: | :---: |
-| ![История буфера обмена](assets/screenshots/clips.png) | ![Bluetooth-устройство](assets/screenshots/device.png) |
-
-| Свёрнутый режим и точки приватности |
-| :---: |
-| ![Свёрнутый режим](assets/screenshots/mini.png) |
-
-</div>
+<table>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <img src="assets/screenshots/music.png" alt="Плеер Dynamic Island" width="100%">
+      <br>
+      <b>🎵 Живой медиаплеер и палитра обложки</b><br>
+      <sub>Адаптивный эквалайзер и мягкое свечение рамки в тон обложке, перемотка и переключение между несколькими плеерами (<code>1/2 ▾</code>).</sub>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <img src="assets/screenshots/home.png" alt="Домашний экран и помодоро" width="100%">
+      <br>
+      <b>🏠 Домашний хаб, Помодоро и метрики</b><br>
+      <sub>Часы, серия фокуса (<code>🍅</code>), быстрые чипы буфера, полки и наушников, статус микрофона/камеры, загрузка ЦП/ОЗУ и таймер.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <img src="assets/screenshots/audio.png" alt="Переключатель вывода звука" width="100%">
+      <br>
+      <b>🎧 Вывод звука в 1 клик и быстрый Mute</b><br>
+      <sub>Мгновенное переключение между наушниками, колонками и монитором через <code>IPolicyConfig</code> без системных настроек.</sub>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <img src="assets/screenshots/shelf.png" alt="Полка файлов" width="100%">
+      <br>
+      <b>📂 Полка файлов (Drag &amp; Drop + ОЗУ/диск)</b><br>
+      <sub>Бросайте файлы на остров или жмите <code>+ Из буфера</code>, показывайте в Проводнике и перетаскивайте обратно в любое окно (OLE <code>DoDragDrop</code>).</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <img src="assets/screenshots/clips.png" alt="История буфера обмена" width="100%">
+      <br>
+      <b>📋 Быстрая история буфера обмена (только в ОЗУ)</b><br>
+      <sub>До 6 последних скопированных текстов под рукой в 1 клик с защитой паролей и автоочисткой при выходе.</sub>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <img src="assets/screenshots/device.png" alt="Подключение наушников" width="100%">
+      <img src="assets/screenshots/mini.png" alt="Свёрнутый режим и точки приватности" width="100%">
+      <br>
+      <b>🔋 Bluetooth-заряд и свёрнутый режим</b><br>
+      <sub>Кольцо заряда гарнитуры при подключении и аккуратная мини-капсула с индикаторами микрофона (🟠) и камеры (🟢).</sub>
+    </td>
+  </tr>
+</table>
 
 <details>
-<summary><b>Окно настроек (v0.3.0)</b></summary>
-
-<div align="center">
+<summary><b>⚙️ Посмотреть окно настроек (v0.3.0)</b></summary>
 <br>
-<img src="assets/screenshots/settings.png" alt="Окно настроек Dynamic Island" width="400">
+<div align="center">
+  <img src="assets/screenshots/settings.png" alt="Окно настроек Dynamic Island" width="420">
+  <p><sub>Автозапуск, язык интерфейса (Авто / RU / EN), стиль обводки (Тонкая / Свечение / Без рамки), выбор монитора и выравнивания, отступ сверху, тихий режим Помодоро, запись своих горячих клавиш и 30-дневная статистика.</sub></p>
 </div>
+</details>
+
+---
+
+<a id="features"></a>
+
+## 🚀 Возможности в деталях
+
+### 🎵 Музыка, медиа и управление звуком
+- **Системная интеграция Windows GSMTC** — работает со Spotify, Яндекс Музыкой, Apple Music, Tidal, Deezer, браузерами (Chrome, Edge, Firefox, Brave, Arc, Zen, Vivaldi), PotPlayer, mpv и любым медиаплеером Windows.
+- **Нативная обработка обложек (WIC `128×128`)** — обложка сжимается на стороне Rust до отправки в UI, а цвета эквалайзера и свечения рамки плавно подстраиваются под её оттенки.
+- **Переключение между активными сессиями** — если открыто сразу несколько источников медиа, переключайтесь между ними прямо из заголовка карточки.
+- **Аудиовыход в 1 клик и Mute** — выбор активного устройства вывода (`IPolicyConfig`) из домашнего чипа и мгновенный Mute по средней кнопке мыши на острове.
+
+### 📂 Полка файлов и умный буфер обмена
+- **Нативный Drag & Drop в обе стороны** — перетащите файлы на раскрытый остров или нажмите **`+ Из буфера`** (`CF_HDROP`), а затем вытяните их обратно в браузер, Telegram, Discord или Проводник через системный OLE `SHCreateDataObject` / `DoDragDrop`.
+- **Сохранение и быстрый обзор** — закреплённые на полке файлы сохраняются между перезапусками (`shelf.json`), а одиночный клик подсвечивает файл прямо в Проводнике (`SHOpenFolderAndSelectItems`).
+- **Приватная RAM-история буфера** — хранит последние 6 текстовых фрагментов только в оперативной памяти; записи из менеджеров паролей (`ExcludeClipboardContentFromMonitorProcessing`, `CanIncludeInClipboardHistory = 0`) не читаются.
+
+### 🍅 Таймер, Помодоро и режим фокуса
+- **Гибкие интервалы** — быстрые кнопки `5 мин`, `15 мин`, `Помодоро 25`, свой таймер от `1` до `180 мин` (кнопками или колёсиком мыши) и добавление `+1 мин` на ходу.
+- **Устойчивость к перезапуску** — активный отсчёт сохраняется и продолжает идти без потерь после перезапуска приложения.
+- **Тихий режим (`🌙`) и статистика** — ручной режим «Не беспокоить» и автоприглушение второстепенных всплывающих уведомлений во время фокус-сессии, плюс 30-дневная история (сегодня, за 7 дней и серия дней подряд).
+
+### 🛡️ Индикаторы системы и адаптивность к окнам
+- **Контроль микрофона и камеры** — оранжевая и зелёная точки рядом с островом загораются в момент реального доступа программ к микрофону или веб-камере (`RegNotifyChangeKeyValue`) и открывают настройки конфиденциальности по клику.
+- **Батарея ноутбука и Bluetooth-аксессуаров** — чтение заряда гарнитур через `SetupAPI`, предупреждение о низком заряде, расчёт оставшегося времени работы и использование ОЗУ в гигабайтах.
+- **Умное поведение у верхнего края (`topbusy`)** — когда под островом развёрнуто окно с вкладками браузера, капсула аккуратно складывается в тонкую 5-пиксельную полоску и увеличивает задержку раскрытия, чтобы никогда не мешать переключению вкладок (корректно работает при выравнивании **Слева**, **По центру** и **Справа**, а также на мониторах со смешанным DPI).
+
+---
+
+<a id="controls"></a>
+
+## ⌨️ Горячие клавиши и жесты
+
+| Действие | Сочетание или жест |
+| :--- | :--- |
+| **Раскрыть / закрепить остров** | <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>I</kbd> *(переназначается в настройках)* или наведение курсора |
+| **Старт Помодоро 25 / пауза таймера** | <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>T</kbd> *(переназначается в настройках)* |
+| **Изменить системную громкость** | Прокрутка **колёсика мыши** над островом *(опционально — и над свёрнутым)* |
+| **Выключить / включить звук (Mute)** | **Средняя кнопка мыши** по острову или кнопка `🔇` в панели звука |
+| **Следующий / предыдущий трек** | Горизонтальный **свайп двумя пальцами** по тачпаду или кнопки плеера |
+| **Пауза / воспроизведение трека** | **Двойной клик** по обложке или названию трека |
+| **Показать файл с полки в папке** | **Одиночный клик** по файлу на полке *(зажатие мыши — перетаскивание наружу)* |
+| **Выбрать минуты своего таймера** | **Колёсико мыши** или кнопки <kbd>−</kbd> / <kbd>+</kbd> *(с <kbd>Shift</kbd> — шаг по 5 мин)* |
+
+---
+
+<a id="install"></a>
+
+## 📦 Установка и запуск
+
+1. Скачайте свежую сборку со [страницы релизов](https://github.com/raiyaxkrash/dynamic-island/releases/latest):
+   - **`Dynamic-Island-0.3.0-x64-setup.exe`** — классический установщик с ярлыками и удалением через систему.
+   - **`dynamic-island-0.3.0-x64-portable.exe`** — портативный один файл (можно положить в любую папку и сразу запустить).
+2. После запуска остров появится у верхнего края экрана, а его значок — в системном трее Windows (левый клик по значку в трее открывает окно настроек).
+
+> [!NOTE]
+> **Подсказка по Windows SmartScreen:** исполняемый файл пока не подписан платным сертификатом Authenticode, поэтому при первом запуске Windows может показать окно *«Система Windows защитила ваш компьютер»*. Нажмите **Подробнее → Выполнить в любом случае** — либо соберите приложение самостоятельно из исходного кода за пару минут.
+
+---
+
+<a id="architecture"></a>
+
+## 🧩 Архитектура проекта
+
+Все системные модули работают в изолированных потоках по нативным уведомлениям Windows API и отправляют компактные события во фронтенд через Tauri IPC:
+
+```mermaid
+flowchart LR
+  subgraph WinAPI["События Windows (Win32 / WinRT)"]
+    M["GSMTC + WIC 128x128"]
+    A["Core Audio + IPolicyConfig"]
+    C["Clipboard + OLE DragDrop"]
+    P["Registry Mic/Cam + Power + SetupAPI"]
+    H["Win32 Hover / DPI / Hotkeys"]
+  end
+
+  subgraph Core["Rust Core (Tauri 2)"]
+    S["Shared State + Settings + Shelf"]
+  end
+
+  subgraph UI["WebView2 UI (Vanilla JS/CSS)"]
+    R["60 FPS Spring Engine + i18n (RU/EN)"]
+  end
+
+  M & A & C & P & H --> S --> R
+```
+
+<details>
+<summary><b>📁 Структура исходного кода</b></summary>
+
+```text
+dynamic-island/
+├── src-tauri/src/
+│   ├── lib.rs          # Инициализация Tauri, локализованный трей, IPC-команды, ротация логов
+│   ├── media.rs        # Событийный GSMTC, мульти-сессии и WIC-даунскейл обложек до 128×128
+│   ├── audio.rs        # Core Audio (IMMNotificationClient), 1-клик смена вывода и Mute
+│   ├── shelf.rs        # Сохраняемая полка файлов, показ в Проводнике и нативный OLE DoDragDrop
+│   ├── clipboard.rs    # AddClipboardFormatListener, RAM-история текста, запись и чтение CF_HDROP
+│   ├── hover.rs        # Click-through (WS_EX_TRANSPARENT), topbusy, смешанный DPI и fullscreen
+│   ├── devices.rs      # Чтение заряда Bluetooth-устройств через SetupAPI
+│   ├── privacy.rs      # RegNotifyChangeKeyValue для индикаторов микрофона и камеры
+│   ├── power.rs        # RegisterPowerSettingNotification для батареи и расчёта времени работы
+│   ├── keyboard.rs     # Отслеживание смены раскладки (15+ языков) и состояния Caps Lock
+│   ├── hotkeys.rs      # Глобальные горячие клавиши RegisterHotKey с проверкой комбинаций
+│   ├── settings.rs     # Конфигурация, автозапуск в реестре и 30-дневная статистика помодоро
+│   ├── sysinfo.rs      # Загрузка ЦП и памяти (включая ГБ) + полуночный сброс счётчика
+│   ├── updater.rs      # Проверка релизов на GitHub через WinHttp с сетевыми таймаутами
+│   └── winmsg.rs       # Общий цикл скрытых окон сообщений HWND_MESSAGE
+└── ui/
+    ├── index.html      # Разметка всех состояний и панелей острова
+    ├── island.css      # Стили, адаптивное свечение рамки и микроанимации
+    ├── island.js       # Физика затухающих пружин (60 FPS), приоритеты HUD, таймер и жесты
+    ├── i18n.js         # Полный словарь локализации (Русский / English)
+    └── settings.html   # Окно настроек со статистикой и записью хоткеев
+```
 
 </details>
 
 ---
 
-## Возможности
+<a id="build"></a>
 
-- **Музыка и медиа (Windows GSMTC).** Работает со Spotify, Яндекс Музыкой, Apple Music, Tidal, Deezer, YouTube в браузерах (Chrome, Edge, Firefox, Brave, Arc, Zen, Vivaldi), PotPlayer, mpv и любыми приложениями с системным медиа-контролем. Обложка масштабируется в Rust (WIC `128×128`), цвет эквалайзера и свечения рамки подстраивается под её палитру, а между несколькими активными плеерами можно переключаться прямо из карточки трека.
-- **Переключатель вывода звука и быстрый Mute.** Клик по чипу наушников/динамиков открывает список активных аудиоустройств и переключает вывод по умолчанию в 1 клик (`IPolicyConfig`), а средняя кнопка мыши по острову (или кнопка в панели звука) мгновенно включает/выключает Mute.
-- **Полка файлов (Drag & Drop + сохранение).** Перетащите файлы на раскрытый остров или нажмите `+ Из буфера` (`CF_HDROP`), чтобы держать их под рукой между перезапусками (`shelf.json`), показать в Проводнике по клику (`SHOpenFolderAndSelectItems`) или вытянуть обратно в любое окно через нативный Windows OLE `DoDragDrop`.
-- **Быстрая история буфера обмена (только в ОЗУ).** Хранит до 6 последних скопированных текстовых фрагментов исключительно в оперативной памяти для вставки в 1 клик. Данные с флагами приватности менеджеров паролей (`ExcludeClipboardContentFromMonitorProcessing`, `CanIncludeInClipboardHistory = 0`) игнорируются и не сохраняются на диск.
-- **Таймер, свой интервал, помодоро и тихий режим.** Пресеты `5 мин`, `15 мин`, `Помодоро 25`, свой таймер (`1–180 мин`), `+1 мин` на лету, сохранение активного отсчёта при перезапуске, кнопка «Тихий режим» (🌙), автоприглушение второстепенных уведомлений во время фокус-сессии и 30-дневная статистика.
-- **Микрофон и камера.** Оранжевая и зелёная точки справа от острова при обращении программ к микрофону или камере; на домашнем экране показывается само приложение, а клик открывает параметры конфиденциальности Windows.
-- **Наушники и заряд Bluetooth.** При подключении показывает название и тип устройства и, если Windows сообщает уровень батареи, кольцо заряда; подробные подсказки показывают остаток времени работы ноутбука и занятую память в ГБ.
-- **Раскладка и Caps Lock.** Отслеживает смену языка (`РУ`, `EN`, `DE`, `FR`, `ES`, `IT`, `PT`, `PL`, `TR`, `JA`, `KO`, `ZH`, `HE`, `AR` и др., включая `Win + Space`) и состояние `Caps Lock`.
-- **Гибкий внешний вид, локализация (RU / EN) и мультимониторность.** Три стиля обводки (`Тонкая`, `Свечение` под цвет обложки, `Без рамки`), автовыбор или ручное переключение языка (включая меню в системном трее), выбор монитора (Основной / За курсором с поддержкой смешанного DPI), выравнивание (Слева / По центру / Справа с точным определением перекрытия окон под островом), отступ сверху и запись своих горячих клавиш.
-- **Проверка обновлений и событийный бэкенд.** Фоновая и ручная проверка свежих релизов на GitHub (`WinHttp` с таймаутами) с компактным индикатором `↑` на домашнем экране, а все системные наблюдатели (`GSMTC`, `Core Audio`, `RegisterPowerSettingNotification`, `AddClipboardFormatListener`, `RegNotifyChangeKeyValue`) работают по событиям Windows.
+## 🛠️ Сборка из исходников
 
----
-
-## Горячие клавиши и жесты
-
-| Действие | Управление |
-| --- | --- |
-| Раскрыть / свернуть остров | `Ctrl + Alt + I` *(настраивается в параметрах или наведение курсора)* |
-| Запустить Помодоро 25 / пауза таймера | `Ctrl + Alt + T` *(настраивается в параметрах)* |
-| Изменить громкость | Колёсико мыши над раскрытым островом *(опционально — и над свёрнутым)* |
-| Выключить / включить звук (Mute) | Средняя кнопка мыши по острову или кнопка в панели звука |
-| Следующий / предыдущий трек | Горизонтальный свайп двумя пальцами по тачпаду |
-| Пауза / воспроизведение | Двойной клик по обложке или названию трека |
-| Показать файл с полки в Проводнике | Одиночный клик по файлу на полке *(перетаскивание — Drag & Drop)* |
-| Настройка своего таймера | Колёсико мыши или кнопки `−` / `+` в режиме таймера |
-
----
-
-## Сборка из исходников
-
-Требуются **Node.js 20+** и **Rust** (stable toolchain на Windows).
+Понадобятся **Node.js 20+** и **Rust** (`stable-x86_64-pc-windows-msvc`).
 
 ```bash
+# 1. Клонирование и установка зависимостей
+git clone https://github.com/raiyaxkrash/dynamic-island.git
+cd dynamic-island
 npm install
-npm run dev      # запуск в режиме разработки
-npm run build    # релизная сборка и NSIS-установщик в src-tauri/target/release/bundle/nsis
-```
 
-Проверка фронтенда и тестов Rust:
+# 2. Запуск в режиме разработки
+npm run dev
 
-```bash
+# 3. Проверка синтаксиса JS и модульных тестов Rust
 node --check ui/i18n.js
 node --check ui/island.js
 cargo test --manifest-path src-tauri/Cargo.toml
+
+# 4. Сборка оптимизированного релиза и NSIS-установщика
+npm run build
 ```
+
+Готовый бинарник появится в `src-tauri/target/release/dynamic-island.exe`, а установщик — в `src-tauri/target/release/bundle/nsis/`.
 
 ---
 
-## Архитектура проекта
+<div align="center">
 
-- `src-tauri/src/lib.rs` — инициализация Tauri, локализованный трей, окна, команды IPC, размещение и ротируемое логирование (`island.log`).
-- `src-tauri/src/media.rs` — событийный GSMTC, переключение сессий и даунскейл обложек через Windows WIC.
-- `src-tauri/src/audio.rs` — Core Audio (`IMMNotificationClient`, `IAudioEndpointVolumeCallback`), переключение устройства вывода (`IPolicyConfig`), громкость и Mute.
-- `src-tauri/src/shelf.rs` — сохраняемая полка файлов (`shelf.json`), показ в Проводнике (`SHOpenFolderAndSelectItems`) и нативное перетаскивание наружу через OLE `SHCreateDataObject` / `DoDragDrop`.
-- `src-tauri/src/clipboard.rs` — `AddClipboardFormatListener` с проверкой приватности, RAM-история текста, запись в буфер и чтение `CF_HDROP`.
-- `src-tauri/src/devices.rs` — чтение заряда Bluetooth-устройств через `SetupAPI`.
-- `src-tauri/src/hover.rs` — прозрачность для кликов, точное определение окон под островом (`left`/`center`/`right`), многомониторность и полноэкранный режим.
-- `src-tauri/src/privacy.rs` — `RegNotifyChangeKeyValue` для микрофона и камеры.
-- `src-tauri/src/power.rs` — `RegisterPowerSettingNotification` для батареи, питания и оценки оставшегося времени.
-- `src-tauri/src/keyboard.rs` — отслеживание раскладки и `Caps Lock`.
-- `src-tauri/src/hotkeys.rs` — настраиваемые глобальные горячие клавиши `RegisterHotKey`.
-- `src-tauri/src/settings.rs` — настройки, автозапуск в реестре, определение системного языка и 30-дневная история помодоро.
-- `src-tauri/src/updater.rs` — проверка обновлений через GitHub Releases API (`WinHttp` с сетевыми таймаутами).
-- `src-tauri/src/sysinfo.rs` — загрузка ЦП/ОЗУ (включая объём в ГБ) и полуночный сброс счётчика.
-- `src-tauri/src/winmsg.rs` — общий помощник скрытых `HWND_MESSAGE`-окон.
-- `ui/` — интерфейс острова (`index.html`, `island.css`, `island.js`), локализация (`i18n.js`) и окно настроек (`settings.html`).
+Лицензия **[MIT](LICENSE)** &nbsp;·&nbsp; Сделано с любовью к деталям на **Rust + Tauri 2**  
+Если проект оказался полезен — поставьте ⭐ репозиторию!
+
+</div>
