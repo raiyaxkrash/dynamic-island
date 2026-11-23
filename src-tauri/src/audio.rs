@@ -298,33 +298,48 @@ pub fn step(delta: f32) {
     let _ = tx.send(delta);
 }
 
-/// Устанавливает точную громкость `0.0..=1.0` (для ползунка в панели звука).
+/// Устанавливает точную громкость `0.0..=1.0` (для ползунка в панели звука) через единый фоновый поток.
 pub fn set_volume(level: f32) {
-    let target = level.clamp(0.0, 1.0);
-    std::thread::spawn(move || unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-        if let Ok(en) = enumerator() {
-            if let Ok(dev) = default_device(&en) {
-                if let Ok(e) = dev.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None) {
-                    if target > 0.0 && e.GetMute().map(|m| m.as_bool()).unwrap_or(false) {
-                        let _ = e.SetMute(false, std::ptr::null());
+    static TX: OnceLock<mpsc::Sender<f32>> = OnceLock::new();
+    let tx = TX.get_or_init(|| {
+        let (tx, rx) = mpsc::channel::<f32>();
+        std::thread::spawn(move || {
+            let _com = wic::ComGuard::init_mta();
+            while let Ok(first) = rx.recv() {
+                let mut target = first;
+                while let Ok(newer) = rx.try_recv() {
+                    target = newer;
+                }
+                unsafe {
+                    if let Ok(en) = enumerator() {
+                        if let Ok(dev) = default_device(&en) {
+                            if let Ok(e) = dev.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None) {
+                                if target > 0.0 && e.GetMute().map(|m| m.as_bool()).unwrap_or(false) {
+                                    let _ = e.SetMute(false, std::ptr::null());
+                                }
+                                let _ = e.SetMasterVolumeLevelScalar(target, std::ptr::null());
+                            }
+                        }
                     }
-                    let _ = e.SetMasterVolumeLevelScalar(target, std::ptr::null());
                 }
             }
-        }
+        });
+        tx
     });
+    let _ = tx.send(level.clamp(0.0, 1.0));
 }
 
 /// Переключает системный Mute (вкл/выкл).
 pub fn toggle_mute() {
-    std::thread::spawn(|| unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-        if let Ok(en) = enumerator() {
-            if let Ok(dev) = default_device(&en) {
-                if let Ok(e) = dev.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None) {
-                    if let Ok(m) = e.GetMute() {
-                        let _ = e.SetMute(!m.as_bool(), std::ptr::null());
+    std::thread::spawn(|| {
+        let _com = wic::ComGuard::init_mta();
+        unsafe {
+            if let Ok(en) = enumerator() {
+                if let Ok(dev) = default_device(&en) {
+                    if let Ok(e) = dev.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None) {
+                        if let Ok(m) = e.GetMute() {
+                            let _ = e.SetMute(!m.as_bool(), std::ptr::null());
+                        }
                     }
                 }
             }
@@ -509,32 +524,52 @@ pub fn list_sessions() -> Vec<AudioSessionInfo> {
     }
 }
 
-/// Устанавливает громкость (`0.0..=1.0`) для всех аудио-сессий процесса `pid`.
+/// Устанавливает громкость (`0.0..=1.0`) для всех аудио-сессий процесса `pid` через единый фоновый поток.
 pub fn set_session_volume(pid: u32, level: f32) {
-    let target = level.clamp(0.0, 1.0);
-    std::thread::spawn(move || {
-        let _com = wic::ComGuard::init_mta();
-        unsafe {
-            let Ok(en) = enumerator() else { return };
-            let Ok(dev) = default_device(&en) else { return };
-            let Ok(mgr) = dev.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) else { return };
-            let Ok(sess_enum) = mgr.GetSessionEnumerator() else { return };
-            let count = sess_enum.GetCount().unwrap_or(0);
-            for i in 0..count {
-                let Ok(ctrl) = sess_enum.GetSession(i) else { continue };
-                let Ok(ctrl2) = ctrl.cast::<IAudioSessionControl2>() else { continue };
-                if ctrl2.GetProcessId().unwrap_or(0) != pid {
-                    continue;
-                }
-                if let Ok(vol) = ctrl.cast::<ISimpleAudioVolume>() {
-                    if target > 0.0 && vol.GetMute().map(|b| b.as_bool()).unwrap_or(false) {
-                        let _ = vol.SetMute(false, std::ptr::null());
+    static TX: OnceLock<mpsc::Sender<(u32, f32)>> = OnceLock::new();
+    let tx = TX.get_or_init(|| {
+        let (tx, rx) = mpsc::channel::<(u32, f32)>();
+        std::thread::spawn(move || {
+            let _com = wic::ComGuard::init_mta();
+            while let Ok((mut cur_pid, mut target)) = rx.recv() {
+                while let Ok((next_pid, next_val)) = rx.try_recv() {
+                    if next_pid == cur_pid {
+                        target = next_val;
+                    } else {
+                        apply_session_volume(cur_pid, target);
+                        cur_pid = next_pid;
+                        target = next_val;
                     }
-                    let _ = vol.SetMasterVolume(target, std::ptr::null());
                 }
+                apply_session_volume(cur_pid, target);
+            }
+        });
+        tx
+    });
+    let _ = tx.send((pid, level.clamp(0.0, 1.0)));
+}
+
+fn apply_session_volume(pid: u32, target: f32) {
+    unsafe {
+        let Ok(en) = enumerator() else { return };
+        let Ok(dev) = default_device(&en) else { return };
+        let Ok(mgr) = dev.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) else { return };
+        let Ok(sess_enum) = mgr.GetSessionEnumerator() else { return };
+        let count = sess_enum.GetCount().unwrap_or(0);
+        for i in 0..count {
+            let Ok(ctrl) = sess_enum.GetSession(i) else { continue };
+            let Ok(ctrl2) = ctrl.cast::<IAudioSessionControl2>() else { continue };
+            if ctrl2.GetProcessId().unwrap_or(0) != pid {
+                continue;
+            }
+            if let Ok(vol) = ctrl.cast::<ISimpleAudioVolume>() {
+                if target > 0.0 && vol.GetMute().map(|b| b.as_bool()).unwrap_or(false) {
+                    let _ = vol.SetMute(false, std::ptr::null());
+                }
+                let _ = vol.SetMasterVolume(target, std::ptr::null());
             }
         }
-    });
+    }
 }
 
 /// Переключает Mute для всех аудио-сессий процесса `pid`.

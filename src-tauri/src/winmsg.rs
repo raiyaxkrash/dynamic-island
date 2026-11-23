@@ -4,8 +4,8 @@ use windows::core::PCWSTR;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DispatchMessageW, GetMessageW, RegisterClassW, TranslateMessage,
-    HWND_MESSAGE, MSG, WNDCLASSW, WNDPROC,
+    CreateWindowExW, DestroyWindow, DispatchMessageW, GetMessageW, RegisterClassW,
+    TranslateMessage, HWND_MESSAGE, MSG, WNDCLASSW, WNDPROC,
 };
 
 /// Создаёт скрытое message-only окно и запускает цикл сообщений `GetMessageW`.
@@ -37,6 +37,7 @@ pub fn run(class_name: PCWSTR, proc: WNDPROC, setup: impl FnOnce(HWND) -> bool) 
             return false;
         };
         if !setup(hwnd) {
+            let _ = DestroyWindow(hwnd);
             return false;
         }
         let mut msg = MSG::default();
@@ -44,6 +45,7 @@ pub fn run(class_name: PCWSTR, proc: WNDPROC, setup: impl FnOnce(HWND) -> bool) 
             let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
+        let _ = DestroyWindow(hwnd);
         true
     }
 }

@@ -173,6 +173,7 @@
     try {
       const info = await invoke('check_update');
       if (info && info.available) {
+        cur.update = info;
         releaseUrl = info.url;
         canInstall = !!info.download_url;
         updStatus.textContent = T('s_upd_avail', { v: info.version });

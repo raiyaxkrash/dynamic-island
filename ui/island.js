@@ -246,6 +246,7 @@
   function mode() {
     if (st.full) return 'hidden';
     if (st.settings.capsule_only) {
+      if (st.hud && st.hud.type === 'done') return 'done';
       if (st.topbusy) {
         const om = st.settings.over_maximized || 'sliver';
         if (om === 'hide') return 'hidden';
@@ -297,10 +298,11 @@
     const sw = w * sc;
     const sh = h * sc;
     const expMode = st.settings.expand_mode || 'hover';
-    const interactive = !capOnly && (st.hover || st.pinned || st.dragHover || m === 'done');
-    const clickTrigger = !capOnly && !interactive && expMode === 'click' && !st.topbusy && (m === 'idle' || m === 'mini' || m === 'tmini') && st.settings.idle_style !== 'hidden';
-    const wheelOnly = !capOnly && !interactive && !!st.settings.wheel_collapsed && !st.topbusy && (m === 'idle' || m === 'mini' || m === 'tmini');
-    if (capOnly || m === 'hidden' || (!interactive && expMode === 'hotkey')) {
+    const interactive = (!capOnly && (st.hover || st.pinned || st.dragHover)) || m === 'done';
+    const allowOverMax = !st.topbusy || st.settings.over_maximized === 'pill';
+    const clickTrigger = !capOnly && !interactive && expMode === 'click' && allowOverMax && (m === 'idle' || m === 'mini' || m === 'tmini') && st.settings.idle_style !== 'hidden';
+    const wheelOnly = !capOnly && !interactive && !!st.settings.wheel_collapsed && allowOverMax && (m === 'idle' || m === 'mini' || m === 'tmini');
+    if ((capOnly && m !== 'done') || m === 'hidden' || (!interactive && expMode === 'hotkey')) {
       sendRect(0, 0, 0, 0, false);
     } else if (sliver) {
       sendRect((innerWidth - 96 * sc) / 2, 0, 96 * sc, 7, false);
@@ -324,7 +326,7 @@
     return st.dnd || (!!st.settings.quiet_pomo && timer.running() && !timer.paused && timer.kind === 'work');
   }
   function setHud(type, ms, force) {
-    if (st.settings.capsule_only) return;
+    if (st.settings.capsule_only && type !== 'done') return;
     if (!force && isQuiet() && (HUD_PRIO[type] || 0) < 50) return;
     if (st.hud && (HUD_PRIO[type] || 0) < (HUD_PRIO[st.hud.type] || 0)) return;
     st.hud = { type, force: !!force };
@@ -974,7 +976,8 @@
     if (micBtn) micBtn.title = micBtn.ariaLabel = T('mic_mute_tip');
     $('gearBtn').title = $('gearBtn').ariaLabel = T('settings');
     if (st.update && st.update.available) $('updBadge').title = T('upd_badge', { v: st.update.version });
-    $('vClipLbl') && ($('vClipLbl').textContent = T('copied'));
+    const netMeter = $('netMeter');
+    if (netMeter) netMeter.title = T('net_tip');
     const clipLbl = island.querySelector('.v-clip .lbl');
     if (clipLbl) clipLbl.textContent = T('copied');
     const lowLbl = island.querySelector('.v-low .lbl');
