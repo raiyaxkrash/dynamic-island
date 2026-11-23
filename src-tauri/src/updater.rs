@@ -1,7 +1,12 @@
-//! Проверка и 1-клик установка обновлений через GitHub Releases API (`WinHttp`, без ослабления CSP в WebView).
+//! Проверка и тихое 1-клик обновление через GitHub Releases API (`WinHttp`, без ослабления CSP в WebView).
+//!
+//! Основной путь: скачивает свежий `dynamic-island-*-portable.exe`, атомарно подменяет текущий `.exe`
+//! (`current.exe` → `current.exe.old`, `.new` → `current.exe`) и перезапускает приложение за ~2 секунды
+//! без мастера установки и без удаления предыдущей версии.
+//! Фоллбэк (если папка программы защищена от записи): скачивает `*-setup.exe` и запускает его с `/S`.
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -29,6 +34,7 @@ pub struct UpdateInfo {
     pub url: String,
     pub download_url: Option<String>,
     pub asset_name: Option<String>,
+    pub portable_url: Option<String>,
     pub error: Option<String>,
 }
 
@@ -49,11 +55,12 @@ pub fn safe_asset_name(name: &str) -> bool {
         && !name.contains("..")
 }
 
-fn pick_installer_asset(v: &Value) -> (Option<String>, Option<String>) {
+fn pick_assets(v: &Value) -> (Option<String>, Option<String>, Option<String>) {
     let Some(assets) = v.get("assets").and_then(|a| a.as_array()) else {
-        return (None, None);
+        return (None, None, None);
     };
-    let mut best: Option<(u8, String, String)> = None;
+    let mut setup_dl: Option<(String, String)> = None;
+    let mut portable_dl: Option<String> = None;
     for a in assets {
         let Some(name) = a.get("name").and_then(|n| n.as_str()) else { continue };
         let Some(dl) = a.get("browser_download_url").and_then(|u| u.as_str()) else { continue };
@@ -61,21 +68,20 @@ fn pick_installer_asset(v: &Value) -> (Option<String>, Option<String>) {
             continue;
         }
         let lower = name.to_ascii_lowercase();
-        let prio = if lower.ends_with("-setup.exe") {
-            2
-        } else if lower.ends_with(".exe") {
-            1
-        } else {
-            0
-        };
-        if prio > 0 && best.as_ref().is_none_or(|(p, _, _)| prio > *p) {
-            best = Some((prio, dl.to_string(), name.to_string()));
+        if lower.ends_with("-setup.exe") {
+            setup_dl = Some((dl.to_string(), name.to_string()));
+        } else if lower.ends_with("-portable.exe") {
+            portable_dl = Some(dl.to_string());
         }
     }
-    match best {
-        Some((_, dl, name)) => (Some(dl), Some(name)),
-        None => (None, None),
-    }
+    let (dl_url, asset_name) = match setup_dl {
+        Some((u, n)) => (Some(u), Some(n)),
+        None => (
+            portable_dl.clone(),
+            portable_dl.as_ref().map(|_| "dynamic-island-portable.exe".to_string()),
+        ),
+    };
+    (dl_url, asset_name, portable_dl)
 }
 
 pub fn parse_latest_release(body: &str, current: &str) -> Option<UpdateInfo> {
@@ -89,7 +95,7 @@ pub fn parse_latest_release(body: &str, current: &str) -> Option<UpdateInfo> {
     };
     let latest_ver = parse_semver(tag)?;
     let cur_ver = parse_semver(current)?;
-    let (download_url, asset_name) = pick_installer_asset(&v);
+    let (download_url, asset_name, portable_url) = pick_assets(&v);
     Some(UpdateInfo {
         available: latest_ver > cur_ver,
         version: tag.trim_start_matches('v').to_string(),
@@ -97,6 +103,7 @@ pub fn parse_latest_release(body: &str, current: &str) -> Option<UpdateInfo> {
         url,
         download_url,
         asset_name,
+        portable_url,
         error: None,
     })
 }
@@ -224,22 +231,15 @@ fn fetch_latest_json() -> Result<String, &'static str> {
     }
 }
 
-/// Скачивает установщик с GitHub Releases в `%TEMP%\DynamicIslandUpdate\` и запускает его.
-pub fn download_and_install(
+fn download_pe_file(
     url: &str,
-    filename: &str,
-    mut on_progress: impl FnMut(u8),
+    dest: &Path,
+    on_progress: &mut impl FnMut(u8),
 ) -> Result<(), &'static str> {
-    if !allowed_release_url(url) || !safe_asset_name(filename) {
+    if !allowed_release_url(url) {
         return Err("invalid_url");
     }
     let (host_s, path_s) = parse_https_url(url).ok_or("invalid_url")?;
-
-    let dir: PathBuf = std::env::temp_dir().join("DynamicIslandUpdate");
-    std::fs::create_dir_all(&dir).map_err(|_| "io")?;
-    let part_path = dir.join(format!("{filename}.part"));
-    let final_path = dir.join(filename);
-    let _ = std::fs::remove_file(&part_path);
 
     unsafe {
         let session = open_session().ok_or("network")?;
@@ -300,7 +300,7 @@ pub fn download_and_install(
             return Err("too_large");
         }
 
-        let mut file = std::fs::File::create(&part_path).map_err(|_| "io")?;
+        let mut file = std::fs::File::create(dest).map_err(|_| "io")?;
         let mut downloaded: u64 = 0;
         let mut magic = [0u8; 2];
         let mut magic_len = 0usize;
@@ -328,7 +328,7 @@ pub fn download_and_install(
             }
             downloaded += slice.len() as u64;
             if downloaded > MAX_DOWNLOAD_BYTES {
-                let _ = std::fs::remove_file(&part_path);
+                let _ = std::fs::remove_file(dest);
                 return Err("too_large");
             }
             file.write_all(slice).map_err(|_| "io")?;
@@ -343,20 +343,96 @@ pub fn download_and_install(
         drop(file);
 
         if downloaded < 64 * 1024 || &magic != b"MZ" {
-            let _ = std::fs::remove_file(&part_path);
+            let _ = std::fs::remove_file(dest);
             return Err("invalid_file");
-        }
-        let _ = std::fs::remove_file(&final_path);
-        std::fs::rename(&part_path, &final_path).map_err(|_| "io")?;
-        on_progress(100);
-
-        let wide = HSTRING::from(final_path.to_string_lossy().as_ref());
-        let res = ShellExecuteW(None, w!("open"), PCWSTR(wide.as_ptr()), None, None, SW_SHOWNORMAL);
-        if (res.0 as usize) <= 32 {
-            return Err("launch");
         }
         Ok(())
     }
+}
+
+/// Удаляет временный `.old` файл от предыдущего бесшовного обновления.
+pub fn cleanup_old_exe() {
+    if let Ok(exe) = std::env::current_exe() {
+        let old = exe.with_extension("exe.old");
+        if old.exists() {
+            let _ = std::fs::remove_file(old);
+        }
+    }
+}
+
+/// Бесшовное обновление на месте: скачивает новый `.exe`, переименовывает текущий в `.exe.old`
+/// и кладёт свежий `.exe` на его место. Возвращает путь к новому `.exe` для перезапуска.
+pub fn self_update_in_place(
+    portable_url: &str,
+    mut on_progress: impl FnMut(u8),
+) -> Result<PathBuf, &'static str> {
+    let exe = std::env::current_exe().map_err(|_| "readonly")?;
+    let new_path = exe.with_extension("exe.new");
+    let old_path = exe.with_extension("exe.old");
+
+    // Проверяем, можем ли писать в папку с exe (если нет — вернём "readonly" для фоллбэка на setup.exe /S).
+    if std::fs::File::create(&new_path).is_err() {
+        return Err("readonly");
+    }
+    let _ = std::fs::remove_file(&new_path);
+
+    download_pe_file(portable_url, &new_path, &mut on_progress)?;
+
+    let _ = std::fs::remove_file(&old_path);
+    if std::fs::rename(&exe, &old_path).is_err() {
+        let _ = std::fs::remove_file(&new_path);
+        return Err("readonly");
+    }
+    if std::fs::rename(&new_path, &exe).is_err() {
+        let _ = std::fs::rename(&old_path, &exe);
+        let _ = std::fs::remove_file(&new_path);
+        return Err("io");
+    }
+    on_progress(100);
+    Ok(exe)
+}
+
+/// Фоллбэк: скачивает установщик в `%TEMP%\DynamicIslandUpdate\` и запускает его тихо (`/S`).
+pub fn download_and_install(
+    url: &str,
+    filename: &str,
+    mut on_progress: impl FnMut(u8),
+) -> Result<(), &'static str> {
+    if !allowed_release_url(url) || !safe_asset_name(filename) {
+        return Err("invalid_url");
+    }
+    let dir: PathBuf = std::env::temp_dir().join("DynamicIslandUpdate");
+    std::fs::create_dir_all(&dir).map_err(|_| "io")?;
+    let part_path = dir.join(format!("{filename}.part"));
+    let final_path = dir.join(filename);
+    let _ = std::fs::remove_file(&part_path);
+
+    download_pe_file(url, &part_path, &mut on_progress)?;
+
+    let _ = std::fs::remove_file(&final_path);
+    std::fs::rename(&part_path, &final_path).map_err(|_| "io")?;
+    on_progress(100);
+
+    unsafe {
+        let wide = HSTRING::from(final_path.to_string_lossy().as_ref());
+        let args = if filename.to_ascii_lowercase().ends_with("-setup.exe") {
+            Some(w!("/S"))
+        } else {
+            None
+        };
+        let res = ShellExecuteW(
+            None,
+            w!("open"),
+            PCWSTR(wide.as_ptr()),
+            args.unwrap_or(PCWSTR::null()),
+            None,
+            SW_SHOWNORMAL,
+        );
+        if (res.0 as usize) <= 32 {
+            return Err("launch");
+        }
+    }
+    Ok(())
 }
 
 pub fn check(current: &str) -> UpdateInfo {
@@ -368,6 +444,7 @@ pub fn check(current: &str) -> UpdateInfo {
             url: format!("{RELEASES_PREFIX}releases/latest"),
             download_url: None,
             asset_name: None,
+            portable_url: None,
             error: Some("parse".to_string()),
         }),
         Err(code) => UpdateInfo {
@@ -377,6 +454,7 @@ pub fn check(current: &str) -> UpdateInfo {
             url: format!("{RELEASES_PREFIX}releases/latest"),
             download_url: None,
             asset_name: None,
+            portable_url: None,
             error: Some(code.to_string()),
         },
     }
@@ -405,6 +483,7 @@ mod tests {
         assert_eq!(info.version, "0.7.0");
         assert_eq!(info.asset_name.as_deref(), Some("Dynamic-Island-0.7.0-x64-setup.exe"));
         assert!(info.download_url.as_deref().unwrap().ends_with("-setup.exe"));
+        assert!(info.portable_url.as_deref().unwrap().ends_with("-portable.exe"));
         assert!(info.error.is_none());
 
         let same = parse_latest_release(

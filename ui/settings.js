@@ -74,7 +74,7 @@
     });
     if (s.update && s.update.available && !installing) {
       releaseUrl = s.update.url || '';
-      canInstall = !!s.update.download_url;
+      canInstall = !!(s.update.portable_url || s.update.download_url);
       updStatus.classList.remove('err');
       updStatus.textContent = T('s_upd_avail', { v: s.update.version });
       updBtn.textContent = T('s_upd_avail', { v: s.update.version });
@@ -175,7 +175,7 @@
       if (info && info.available) {
         cur.update = info;
         releaseUrl = info.url;
-        canInstall = !!info.download_url;
+        canInstall = !!(info.portable_url || info.download_url);
         updStatus.textContent = T('s_upd_avail', { v: info.version });
         updBtn.textContent = T('s_upd_avail', { v: info.version });
         updBtn.classList.add('accent');

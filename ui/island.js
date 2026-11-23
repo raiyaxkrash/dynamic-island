@@ -698,7 +698,7 @@
       invoke('set_setting', { key: 'dnd', value: st.dnd }).catch(() => {});
     }
     else if (a === 'open-update') {
-      if (st.update && st.update.download_url) {
+      if (st.update && (st.update.portable_url || st.update.download_url)) {
         const badge = $('updBadge');
         if (badge) badge.textContent = '0%';
         invoke('install_update').catch(() => {

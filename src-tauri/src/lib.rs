@@ -5,7 +5,7 @@
 //! только в прямоугольнике, который сообщает интерфейс.
 
 use std::io::Write;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 use serde_json::{json, Map, Value};
@@ -13,7 +13,7 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, Monitor, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use windows::core::{w, HSTRING, PCWSTR};
-use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS, WAIT_OBJECT_0};
+use windows::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE, WAIT_OBJECT_0};
 use windows::Win32::System::Threading::{
     CreateEventW, CreateMutexW, OpenEventW, SetEvent, WaitForSingleObject, EVENT_MODIFY_STATE,
 };
@@ -212,6 +212,35 @@ async fn install_update(app: AppHandle) -> Result<(), String> {
     if !info.available {
         return Err("latest".to_string());
     }
+
+    // 1. Бесшовное обновление на месте: подмена текущего .exe без установщика и без удаления старой версии.
+    if let Some(portable_url) = info.portable_url.clone() {
+        let handle = app.clone();
+        let res = tauri::async_runtime::spawn_blocking(move || {
+            updater::self_update_in_place(&portable_url, |pct| {
+                let _ = handle.emit("update-progress", pct);
+            })
+        })
+        .await
+        .map_err(|_| "network".to_string())?;
+
+        match res {
+            Ok(new_exe) => {
+                release_single_instance();
+                if std::process::Command::new(&new_exe).arg("--relaunch").spawn().is_ok() {
+                    app.exit(0);
+                    return Ok(());
+                }
+                return Err("launch".to_string());
+            }
+            Err("readonly") => {
+                // Папка защищена от записи (например Program Files) — переходим к тихому setup.exe /S.
+            }
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+
+    // 2. Фоллбэк: скачиваем NSIS-установщик и запускаем его в тихом режиме (`/S`).
     let (Some(dl_url), Some(asset_name)) = (info.download_url.clone(), info.asset_name.clone()) else {
         open_release_url(info.url);
         return Ok(());
@@ -722,13 +751,40 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+static SINGLE_INSTANCE_MUTEX: AtomicIsize = AtomicIsize::new(0);
+
+fn release_single_instance() {
+    let raw = SINGLE_INSTANCE_MUTEX.swap(0, Ordering::SeqCst);
+    if raw != 0 {
+        unsafe {
+            let _ = CloseHandle(HANDLE(raw as _));
+        }
+    }
+}
+
 /// Вторая копия острова не нужна: если он уже запущен, будим окно настроек у первой копии и выходим.
+/// При `--relaunch` (после бесшовного самообновления) ждём до ~2 секунд выхода старого процесса.
 fn already_running() -> bool {
+    let relaunch = std::env::args().any(|a| a == "--relaunch");
+    let attempts = if relaunch { 15 } else { 1 };
     unsafe {
-        let _ = CreateMutexW(None, true, w!("Local\\DynamicIsland.SingleInstance"));
-        if GetLastError() == ERROR_ALREADY_EXISTS {
-            if let Ok(ev) = OpenEventW(EVENT_MODIFY_STATE, false, w!("Local\\DynamicIsland.WakeSettings")) {
-                let _ = SetEvent(ev);
+        for i in 0..attempts {
+            if let Ok(h) = CreateMutexW(None, true, w!("Local\\DynamicIsland.SingleInstance")) {
+                if GetLastError() != ERROR_ALREADY_EXISTS {
+                    SINGLE_INSTANCE_MUTEX.store(h.0 as isize, Ordering::SeqCst);
+                    return false;
+                }
+                let _ = CloseHandle(h);
+            }
+            if relaunch && i + 1 < attempts {
+                std::thread::sleep(std::time::Duration::from_millis(150));
+                continue;
+            }
+            if !relaunch {
+                if let Ok(ev) = OpenEventW(EVENT_MODIFY_STATE, false, w!("Local\\DynamicIsland.WakeSettings")) {
+                    let _ = SetEvent(ev);
+                    let _ = CloseHandle(ev);
+                }
             }
             return true;
         }
@@ -740,6 +796,7 @@ pub fn run() {
     if already_running() {
         return;
     }
+    updater::cleanup_old_exe();
     tauri::Builder::default()
         .manage(Shared::default())
         .invoke_handler(tauri::generate_handler![
