@@ -31,6 +31,7 @@
     clips: [412, 132, 28],
     peek: [330, 54, 27],
     volume: [290, 36, 18],
+    bright: [290, 36, 18],
     charge: [290, 36, 18],
     low: [290, 36, 18],
     clip: [330, 40, 20],
@@ -201,24 +202,19 @@
     const h = Math.ceil(el.offsetHeight);
     return maxH ? Math.min(h, maxH) : h;
   }
-  const CAP_SIZES = {
-    compact: { idle: [102, 24, 12], idleSec: [120, 24, 12], mini: [152, 26, 13], tmini: [120, 26, 13] },
-    normal:  { idle: [124, 30, 15], idleSec: [140, 30, 15], mini: [206, 32, 16], tmini: [150, 32, 16] },
-    large:   { idle: [146, 34, 17], idleSec: [162, 34, 17], mini: [244, 36, 18], tmini: [172, 36, 18] },
+  const MINI_SIZES = {
+    compact: [152, 26, 13],
+    normal:  [206, 32, 16],
+    large:   [244, 36, 18],
   };
-  function capSpec() {
-    return CAP_SIZES[st.settings.capsule_size] || CAP_SIZES.normal;
-  }
   function sizeOf(m) {
-    const cs = capSpec();
     if (m === 'idle') {
       const showClk = st.settings.capsule_only
         ? st.settings.capsule_clock !== false
         : st.settings.idle_style === 'clock';
-      return showClk && st.settings.clock_seconds ? cs.idleSec : cs.idle;
+      return [showClk && st.settings.clock_seconds ? 140 : 124, 30, 15];
     }
-    if (m === 'mini') return cs.mini;
-    if (m === 'tmini') return cs.tmini;
+    if (m === 'mini') return MINI_SIZES[st.settings.capsule_size] || MINI_SIZES.normal;
     if (m === 'home') return [480, measureHeight($$home), 30];
     if (m === 'audio') return [384, measureHeight(document.querySelector('[data-view="audio"]'), 172), 26];
     if (m === 'shelf') return [412, measureHeight(document.querySelector('[data-view="shelf"]'), 172), 28];
@@ -250,6 +246,11 @@
   function mode() {
     if (st.full) return 'hidden';
     if (st.settings.capsule_only) {
+      if (st.topbusy) {
+        const om = st.settings.over_maximized || 'sliver';
+        if (om === 'hide') return 'hidden';
+        if (om === 'sliver') return 'sliver';
+      }
       if (st.settings.capsule_media !== false && st.media.active && !st.mediaHidden && !longPaused()) return 'mini';
       if (st.settings.capsule_timer !== false && timer.running()) return 'tmini';
       return 'idle';
@@ -318,7 +319,7 @@
     invoke('set_hit_rect', { x, y, w, h, interactive }).catch(() => {});
   }
 
-  const HUD_PRIO = { done: 100, low: 80, device: 60, charge: 60, peek: 40, volume: 30, clip: 20, layout: 10, caps: 10 };
+  const HUD_PRIO = { done: 100, low: 80, device: 60, charge: 60, peek: 40, volume: 30, bright: 30, clip: 20, layout: 10, caps: 10, mic: 30 };
   function isQuiet() {
     return st.dnd || (!!st.settings.quiet_pomo && timer.running() && !timer.paused && timer.kind === 'work');
   }
@@ -657,6 +658,13 @@
       startTimer(next[0], next[1]);
     }
     else if (a === 'dismiss') clearHud();
+    else if (a === 'dismiss-tips') {
+      st.settings.seen_tips = true;
+      const tb = $('tipsBar');
+      if (tb) tb.hidden = true;
+      invoke('set_setting', { key: 'seen_tips', value: true }).catch(() => {});
+      render();
+    }
     else if (a === 'settings') invoke('open_settings').catch(() => {});
     else if (a === 'privacy-settings') invoke('open_privacy_settings').catch(() => {});
     else if (a === 'sound-settings') invoke('open_sound_settings').catch(() => {});
@@ -775,6 +783,10 @@
       return;
     }
     wheelUntil = Date.now() + 1200;
+    if (e.shiftKey) {
+      invoke('step_brightness', { delta: e.deltaY < 0 ? 5 : -5 }).catch(() => {});
+      return;
+    }
     invoke('volume_step', { delta: e.deltaY < 0 ? 0.02 : -0.02 }).catch(() => {});
   }, { passive: true });
 
@@ -827,6 +839,53 @@
       volDragging = false;
       aVolHit.classList.remove('drag');
       pushVol(fracOf(e), true);
+    });
+  }
+
+  // ---------- яркость экрана ----------
+  let brightDragging = false;
+  let brightSendAt = 0;
+  const aBrightHit = $('aBrightHit');
+  function paintBrightness(level) {
+    const lvl = Math.min(100, Math.max(0, Math.round(level || 0)));
+    const f = (lvl / 100).toFixed(3);
+    const hudFill = $('bHudFill');
+    if (hudFill) hudFill.style.transform = `scaleX(${f})`;
+    const hudPct = $('bHudPct');
+    if (hudPct) hudPct.textContent = String(lvl);
+    const fill = $('aBrightFill');
+    if (fill) fill.style.transform = `scaleX(${f})`;
+    const pct = $('aBrightPct');
+    if (pct) pct.textContent = lvl + '%';
+  }
+  if (aBrightHit) {
+    const fracOf = (e) => {
+      const r = aBrightHit.getBoundingClientRect();
+      return Math.min(Math.max((e.clientX - r.left) / (r.width || 1), 0), 1);
+    };
+    const pushBright = (f, force) => {
+      const lvl = Math.round(f * 100);
+      paintBrightness(lvl);
+      const now = performance.now();
+      if (force || now - brightSendAt > 45) {
+        brightSendAt = now;
+        invoke('set_brightness', { level: lvl }).catch(() => {});
+      }
+    };
+    aBrightHit.addEventListener('pointerdown', (e) => {
+      brightDragging = true;
+      aBrightHit.classList.add('drag');
+      aBrightHit.setPointerCapture(e.pointerId);
+      pushBright(fracOf(e), true);
+    });
+    aBrightHit.addEventListener('pointermove', (e) => {
+      if (brightDragging) pushBright(fracOf(e), false);
+    });
+    aBrightHit.addEventListener('pointerup', (e) => {
+      if (!brightDragging) return;
+      brightDragging = false;
+      aBrightHit.classList.remove('drag');
+      pushBright(fracOf(e), true);
     });
   }
 
@@ -950,6 +1009,8 @@
     island.dataset.backdrop = st.settings.backdrop || 'oled';
     syncAccent();
     $('sysRow').hidden = st.settings.sysload === false;
+    const tb = $('tipsBar');
+    if (tb) tb.hidden = !!st.settings.seen_tips;
     if (st.device) $('devChip').hidden = st.settings.devices === false;
     $('clipsBtn').hidden = st.settings.clipboard === false || st.clips.length === 0;
     lastRect = '';
@@ -1101,6 +1162,12 @@
   async function openAudioPanel() {
     st.subview = 'audio';
     syncAudioTabs();
+    const bRow = $('aBrightRow');
+    invoke('get_brightness').then((lvl) => {
+      if (bRow) bRow.hidden = typeof lvl !== 'number';
+      if (typeof lvl === 'number') paintBrightness(lvl);
+      if (st.subview === 'audio') render();
+    }).catch(() => { if (bRow) bRow.hidden = true; });
     if (audioTab === 'mixer') await loadAudioMixer();
     else await loadAudioDevices();
     render();
@@ -1448,6 +1515,9 @@
     }
   }
   listen('hover', (e) => onHover(!!e.payload));
+  document.documentElement.addEventListener('mouseleave', () => {
+    if (st.hover && !st.pinned) onHover(false);
+  });
   listen('hotkey', (e) => onHotkey(e.payload));
   listen('capsule-mode', (e) => {
     const on = !!e.payload;
@@ -1486,6 +1556,11 @@
     if (!e.payload.silent) setHud('volume', 1600, Date.now() < wheelUntil);
   });
   listen('mic-mute', (e) => applyMicMute(e.payload));
+  listen('brightness', (e) => {
+    if (!e.payload) return;
+    if (!brightDragging) paintBrightness(e.payload.level);
+    if (!e.payload.silent) setHud('bright', 1600, Date.now() < wheelUntil);
+  });
 
   // ---------- демо-режим (отладка): проигрывает переходы и меряет кадры ----------
   function finishPerf() {

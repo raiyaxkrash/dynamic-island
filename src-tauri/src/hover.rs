@@ -335,6 +335,7 @@ pub fn spawn(app: AppHandle) {
         let mut was_lmb = false;
         let mut dragging_from_outside = false;
         let mut drag_dwell_ticks: u8 = 0;
+        let mut outside_interactive_ticks: u8 = 0;
         let mut near_top = true;
         loop {
             let sleep_ms = if full {
@@ -464,7 +465,18 @@ pub fn spawn(app: AppHandle) {
 
             if now != inside {
                 inside = now;
+                outside_interactive_ticks = 0;
                 let _ = app.emit("hover", now);
+            } else if interactive && !now && !inside {
+                // Страховка для expand_mode="click" и быстрого ухода курсора:
+                // если остров раскрыт (interactive), а курсор снаружи и `inside` уже false,
+                // отправляем `hover(false)`, чтобы `st.hover` не залипал.
+                outside_interactive_ticks = outside_interactive_ticks.saturating_add(1);
+                if outside_interactive_ticks == 8 {
+                    let _ = app.emit("hover", false);
+                }
+            } else {
+                outside_interactive_ticks = 0;
             }
             let want = (inside && interactive) || drag_ready;
             if want != capture {

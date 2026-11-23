@@ -92,6 +92,8 @@ pub struct Settings {
     pub hotkey_mic: String,
     /// Вид свёрнутого острова над развёрнутым окном: `"sliver"`, `"pill"` или `"hide"`.
     pub over_maximized: String,
+    /// Пользователь уже видел короткую шпаргалку жестов при первом запуске.
+    pub seen_tips: bool,
 }
 
 impl Settings {
@@ -149,6 +151,7 @@ impl Default for Settings {
             hotkey_capsule: "Ctrl+Alt+M".to_string(),
             hotkey_mic: "Ctrl+Alt+N".to_string(),
             over_maximized: "sliver".to_string(),
+            seen_tips: false,
         }
     }
 }

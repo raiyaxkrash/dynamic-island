@@ -1,6 +1,6 @@
 [package]
 name = "dynamic-island"
-version = "0.7.1"
+version = "0.7.2"
 description = "Dynamic Island для Windows"
 edition = "2021"
 publish = false
@@ -24,6 +24,7 @@ windows = { version = "0.62", features = [
   "Storage_Streams",
   "Win32_Foundation",
   "Win32_Devices_DeviceAndDriverInstallation",
+  "Win32_Devices_Display",
   "Win32_Devices_FunctionDiscovery",
   "Win32_Devices_Properties",
   "Win32_Graphics_Dwm",
@@ -32,6 +33,8 @@ windows = { version = "0.62", features = [
   "Win32_NetworkManagement_IpHelper",
   "Win32_NetworkManagement_Ndis",
   "Win32_Networking_WinHttp",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
   "Win32_System_Ole",
   "Win32_System_SystemInformation",
   "Win32_System_SystemServices",

@@ -116,6 +116,10 @@
           </button>
         </div>
       </div>
+      <div class="tips-bar st" id="tipsBar" style="--i:4" hidden>
+        <span class="tips-txt" data-i18n="tips_bar">СКМ — Mute · Shift+колесо — яркость · Ctrl+Alt+N — микрофон</span>
+        <button type="button" class="pill sm-pill tips-ok" data-a="dismiss-tips" data-i18n="tips_ok">Понятно</button>
+      </div>
     </div>
 
     <!-- новый трек: короткий показ -->
@@ -179,6 +183,16 @@
       </svg>
       <div class="vtrack"><div class="vfill" id="vFill"></div></div>
       <span class="vpct" id="vPct">0</span>
+    </div>
+
+    <!-- яркость экрана -->
+    <div class="view v-volume v-bright" data-view="bright">
+      <svg class="spk sun-ico" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="4" fill="currentColor"/>
+        <path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+      <div class="vtrack"><div class="vfill bfill-bar" id="bHudFill"></div></div>
+      <span class="vpct" id="bHudPct">0</span>
     </div>
 
     <!-- зарядка -->
@@ -275,6 +289,13 @@
         </button>
         <div class="track-hit a-vol-hit" id="aVolHit"><div class="track"><div class="fill" id="aVolFill"></div></div></div>
         <span class="a-vol-pct" id="aVolPct">100%</span>
+      </div>
+      <div class="a-vol a-bright" id="aBrightRow" hidden>
+        <span class="bright-ico" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M6 6l1.4 1.4M16.6 16.6 18 18M18 6l-1.4 1.4M7.4 16.6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </span>
+        <div class="track-hit a-vol-hit" id="aBrightHit"><div class="track"><div class="fill bfill-bar" id="aBrightFill"></div></div></div>
+        <span class="a-vol-pct" id="aBrightPct">100%</span>
       </div>
       <div class="audio-list audio-devs" id="audioList"></div>
       <div class="audio-list audio-devs" id="mixerList" hidden></div>

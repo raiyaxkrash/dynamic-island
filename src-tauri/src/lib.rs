@@ -21,6 +21,7 @@ use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
 mod audio;
+mod brightness;
 mod clipboard;
 mod devices;
 mod hotkeys;
@@ -362,6 +363,34 @@ fn volume_mute_toggle() {
 #[tauri::command]
 fn mic_mute_toggle(app: AppHandle) -> Option<bool> {
     toggle_mic_mute_global(&app)
+}
+
+#[tauri::command]
+async fn get_brightness() -> Option<u8> {
+    tauri::async_runtime::spawn_blocking(brightness::get)
+        .await
+        .ok()
+        .flatten()
+}
+
+#[tauri::command]
+async fn set_brightness(app: AppHandle, level: u8) -> Option<u8> {
+    let val = tauri::async_runtime::spawn_blocking(move || brightness::set(level))
+        .await
+        .ok()
+        .flatten()?;
+    publish(&app, "brightness", json!({ "level": val, "silent": true }));
+    Some(val)
+}
+
+#[tauri::command]
+async fn step_brightness(app: AppHandle, delta: i32) -> Option<u8> {
+    let val = tauri::async_runtime::spawn_blocking(move || brightness::step(delta))
+        .await
+        .ok()
+        .flatten()?;
+    publish(&app, "brightness", json!({ "level": val, "silent": false }));
+    Some(val)
 }
 
 pub(crate) fn toggle_mic_mute_global(app: &AppHandle) -> Option<bool> {
@@ -723,6 +752,9 @@ pub fn run() {
             volume_set,
             volume_mute_toggle,
             mic_mute_toggle,
+            get_brightness,
+            set_brightness,
+            step_brightness,
             perf,
             pomodoro_done,
             get_settings,
