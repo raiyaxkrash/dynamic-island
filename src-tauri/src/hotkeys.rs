@@ -18,12 +18,14 @@ use crate::{winmsg, Shared};
 const HK_TOGGLE: i32 = 1;
 const HK_TIMER: i32 = 2;
 const HK_CAPSULE: i32 = 3;
+const HK_MIC: i32 = 4;
 const WM_SYNC_HOTKEYS: u32 = WM_APP + 1;
 
 static HOTKEY_HWND: AtomicIsize = AtomicIsize::new(0);
 static TOGGLE_OK: AtomicBool = AtomicBool::new(true);
 static TIMER_OK: AtomicBool = AtomicBool::new(true);
 static CAPSULE_OK: AtomicBool = AtomicBool::new(true);
+static MIC_OK: AtomicBool = AtomicBool::new(true);
 
 thread_local! {
     static APP: RefCell<Option<AppHandle>> = const { RefCell::new(None) };
@@ -89,6 +91,7 @@ unsafe fn apply_registration(hwnd: HWND) {
     let _ = UnregisterHotKey(Some(hwnd), HK_TOGGLE);
     let _ = UnregisterHotKey(Some(hwnd), HK_TIMER);
     let _ = UnregisterHotKey(Some(hwnd), HK_CAPSULE);
+    let _ = UnregisterHotKey(Some(hwnd), HK_MIC);
     APP.with(|c| {
         if let Some(app) = c.borrow().as_ref() {
             let s = crate::lock(&app.state::<Shared>().settings).clone();
@@ -106,23 +109,34 @@ unsafe fn apply_registration(hwnd: HWND) {
                 } else {
                     register_one(hwnd, HK_CAPSULE, &s.hotkey_capsule)
                 };
+                let ok4 = if s.hotkey_mic.eq_ignore_ascii_case(&s.hotkey_toggle)
+                    || s.hotkey_mic.eq_ignore_ascii_case(&s.hotkey_timer)
+                    || s.hotkey_mic.eq_ignore_ascii_case(&s.hotkey_capsule)
+                {
+                    false
+                } else {
+                    register_one(hwnd, HK_MIC, &s.hotkey_mic)
+                };
                 TOGGLE_OK.store(ok1, Ordering::Relaxed);
                 TIMER_OK.store(ok2, Ordering::Relaxed);
                 CAPSULE_OK.store(ok3, Ordering::Relaxed);
+                MIC_OK.store(ok4, Ordering::Relaxed);
             } else {
                 TOGGLE_OK.store(true, Ordering::Relaxed);
                 TIMER_OK.store(true, Ordering::Relaxed);
                 CAPSULE_OK.store(true, Ordering::Relaxed);
+                MIC_OK.store(true, Ordering::Relaxed);
             }
         }
     });
 }
 
-pub fn status() -> (bool, bool, bool) {
+pub fn status() -> (bool, bool, bool, bool) {
     (
         TOGGLE_OK.load(Ordering::Relaxed),
         TIMER_OK.load(Ordering::Relaxed),
         CAPSULE_OK.load(Ordering::Relaxed),
+        MIC_OK.load(Ordering::Relaxed),
     )
 }
 
@@ -133,6 +147,14 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam:
             APP.with(|c| {
                 if let Some(app) = c.borrow().as_ref() {
                     crate::toggle_capsule_mode(app);
+                }
+            });
+            return LRESULT(0);
+        }
+        if id == HK_MIC {
+            APP.with(|c| {
+                if let Some(app) = c.borrow().as_ref() {
+                    crate::toggle_mic_mute_global(app);
                 }
             });
             return LRESULT(0);

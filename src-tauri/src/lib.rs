@@ -361,8 +361,12 @@ fn volume_mute_toggle() {
 
 #[tauri::command]
 fn mic_mute_toggle(app: AppHandle) -> Option<bool> {
+    toggle_mic_mute_global(&app)
+}
+
+pub(crate) fn toggle_mic_mute_global(app: &AppHandle) -> Option<bool> {
     let muted = audio::toggle_mic_mute()?;
-    publish(&app, "mic-mute", json!({ "muted": muted, "silent": false }));
+    publish(app, "mic-mute", json!({ "muted": muted, "silent": false }));
     Some(muted)
 }
 
@@ -394,7 +398,7 @@ fn get_settings(state: tauri::State<Shared>) -> Value {
     let mut v = json!(*lock(&state.settings));
     let stats = lock(&state.stats);
     let (today, week, streak) = settings::stats_summary(&stats, &sysinfo::today());
-    let (hk_toggle_ok, hk_timer_ok, hk_capsule_ok) = hotkeys::status();
+    let (hk_toggle_ok, hk_timer_ok, hk_capsule_ok, hk_mic_ok) = hotkeys::status();
     v["autostart"] = json!(settings::autostart_enabled());
     v["version"] = json!(env!("CARGO_PKG_VERSION"));
     v["pomodoros_today"] = json!(today);
@@ -403,6 +407,7 @@ fn get_settings(state: tauri::State<Shared>) -> Value {
     v["hotkey_toggle_ok"] = json!(hk_toggle_ok);
     v["hotkey_timer_ok"] = json!(hk_timer_ok);
     v["hotkey_capsule_ok"] = json!(hk_capsule_ok);
+    v["hotkey_mic_ok"] = json!(hk_mic_ok);
     if let Some(upd) = lock(&state.snap).get("update").cloned() {
         v["update"] = upd;
     }
@@ -462,14 +467,19 @@ fn set_setting(app: AppHandle, key: String, value: Value) -> Value {
                 if !valid_accent {
                     updated.accent_color = "auto".to_string();
                 }
-                if matches!(key.as_str(), "hotkey_toggle" | "hotkey_timer" | "hotkey_capsule") {
-                    let a = updated.hotkey_toggle.to_ascii_lowercase();
-                    let b = updated.hotkey_timer.to_ascii_lowercase();
-                    let c = updated.hotkey_capsule.to_ascii_lowercase();
-                    if a == b || a == c || b == c {
+                if matches!(key.as_str(), "hotkey_toggle" | "hotkey_timer" | "hotkey_capsule" | "hotkey_mic") {
+                    let vals = [
+                        updated.hotkey_toggle.to_ascii_lowercase(),
+                        updated.hotkey_timer.to_ascii_lowercase(),
+                        updated.hotkey_capsule.to_ascii_lowercase(),
+                        updated.hotkey_mic.to_ascii_lowercase(),
+                    ];
+                    let has_dup = (0..vals.len()).any(|i| vals[i + 1..].contains(&vals[i]));
+                    if has_dup {
                         updated.hotkey_toggle = s.hotkey_toggle.clone();
                         updated.hotkey_timer = s.hotkey_timer.clone();
                         updated.hotkey_capsule = s.hotkey_capsule.clone();
+                        updated.hotkey_mic = s.hotkey_mic.clone();
                     }
                 }
                 *s = updated;
@@ -490,7 +500,7 @@ fn set_setting(app: AppHandle, key: String, value: Value) -> Value {
         if matches!(key.as_str(), "lang" | "capsule_only") {
             sync_tray_labels(&app);
         }
-        if matches!(key.as_str(), "hotkeys" | "hotkey_toggle" | "hotkey_timer" | "hotkey_capsule") {
+        if matches!(key.as_str(), "hotkeys" | "hotkey_toggle" | "hotkey_timer" | "hotkey_capsule" | "hotkey_mic") {
             hotkeys::sync();
         }
         publish_settings(&app);

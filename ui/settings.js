@@ -133,6 +133,9 @@
     });
   }
 
+  listen('settings', (e) => {
+    if (!recording && e.payload) fill(Object.assign({}, cur, e.payload));
+  });
   listen('update-progress', (e) => {
     const p = Math.min(100, Math.max(0, Number(e.payload) || 0));
     const txt = p >= 100 ? T('s_upd_launching') : T('s_upd_downloading', { p });

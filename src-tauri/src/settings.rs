@@ -88,6 +88,8 @@ pub struct Settings {
     pub capsule_clock: bool,
     /// Горячая клавиша переключения режима «Просто капсула».
     pub hotkey_capsule: String,
+    /// Горячая клавиша выключения/включения микрофона (Mute Mic).
+    pub hotkey_mic: String,
     /// Вид свёрнутого острова над развёрнутым окном: `"sliver"`, `"pill"` или `"hide"`.
     pub over_maximized: String,
 }
@@ -145,6 +147,7 @@ impl Default for Settings {
             capsule_timer: true,
             capsule_clock: true,
             hotkey_capsule: "Ctrl+Alt+M".to_string(),
+            hotkey_mic: "Ctrl+Alt+N".to_string(),
             over_maximized: "sliver".to_string(),
         }
     }
