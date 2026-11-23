@@ -11,12 +11,12 @@ use windows::core::{w, HSTRING, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0};
 use windows::Win32::System::Registry::{
     RegCloseKey, RegEnumKeyExW, RegGetValueW, RegNotifyChangeKeyValue, RegOpenKeyExW, HKEY,
-    HKEY_CURRENT_USER, KEY_NOTIFY, KEY_READ, REG_NOTIFY_CHANGE_LAST_SET, REG_NOTIFY_CHANGE_NAME,
-    RRF_RT_REG_QWORD,
+    HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_NOTIFY, KEY_READ, REG_NOTIFY_CHANGE_LAST_SET,
+    REG_NOTIFY_CHANGE_NAME, RRF_RT_REG_QWORD,
 };
 use windows::Win32::System::Threading::{CreateEventW, ResetEvent, WaitForSingleObject};
 
-use crate::{publish, Shared};
+use crate::{audio, publish, Shared};
 
 const STORE: &str = r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore";
 
@@ -31,9 +31,9 @@ fn friendly(key: &str) -> String {
     pkg.rsplit('.').next().unwrap_or(pkg).to_string()
 }
 
-unsafe fn active_in(path: &str, out: &mut Vec<String>) {
+unsafe fn active_in(root: HKEY, path: &str, out: &mut Vec<String>) {
     let mut key = HKEY::default();
-    if RegOpenKeyExW(HKEY_CURRENT_USER, &HSTRING::from(path), None, KEY_READ, &mut key).is_err() {
+    if RegOpenKeyExW(root, &HSTRING::from(path), None, KEY_READ, &mut key).is_err() {
         return;
     }
     let mut i = 0u32;
@@ -52,7 +52,7 @@ unsafe fn active_in(path: &str, out: &mut Vec<String>) {
         let mut stop: u64 = 1;
         let mut size = std::mem::size_of::<u64>() as u32;
         let sub = HSTRING::from(name.as_str());
-        let ok = RegGetValueW(
+        let ok_stop = RegGetValueW(
             key,
             PCWSTR(sub.as_ptr()),
             w!("LastUsedTimeStop"),
@@ -62,7 +62,19 @@ unsafe fn active_in(path: &str, out: &mut Vec<String>) {
             Some(&mut size),
         )
         .is_ok();
-        if ok && stop == 0 {
+        let mut start: u64 = 0;
+        let mut start_size = std::mem::size_of::<u64>() as u32;
+        let ok_start = RegGetValueW(
+            key,
+            PCWSTR(sub.as_ptr()),
+            w!("LastUsedTimeStart"),
+            RRF_RT_REG_QWORD,
+            None,
+            Some(&mut start as *mut u64 as *mut _),
+            Some(&mut start_size),
+        )
+        .is_ok();
+        if ok_stop && stop == 0 && (!ok_start || start > 0) {
             let n = friendly(&name);
             if !out.contains(&n) {
                 out.push(n);
@@ -75,9 +87,19 @@ unsafe fn active_in(path: &str, out: &mut Vec<String>) {
 fn in_use(device: &str) -> Vec<String> {
     let mut out = Vec::new();
     let base = format!(r"{STORE}\{device}");
+    let non_pkg = format!(r"{base}\NonPackaged");
     unsafe {
-        active_in(&base, &mut out);
-        active_in(&format!(r"{base}\NonPackaged"), &mut out);
+        active_in(HKEY_CURRENT_USER, &base, &mut out);
+        active_in(HKEY_CURRENT_USER, &non_pkg, &mut out);
+        active_in(HKEY_LOCAL_MACHINE, &base, &mut out);
+        active_in(HKEY_LOCAL_MACHINE, &non_pkg, &mut out);
+    }
+    if device == "microphone" {
+        for app in audio::active_capture_apps() {
+            if !out.iter().any(|x| x.eq_ignore_ascii_case(&app)) {
+                out.push(app);
+            }
+        }
     }
     out
 }
@@ -120,8 +142,8 @@ pub fn spawn(app: AppHandle) {
                     let k_mic = arm_watch(&mic_path, ev);
                     let k_cam = arm_watch(&cam_path, ev);
                     if k_mic.is_some() || k_cam.is_some() {
-                        // Просыпаемся мгновенно при изменении реестра или раз в 4 с для синхронизации флага privacy.
-                        let _ = WaitForSingleObject(ev, 4000) == WAIT_OBJECT_0;
+                        // Просыпаемся мгновенно при изменении реестра или раз в 1.5 с для синхронизации WASAPI-сессий и флага privacy.
+                        let _ = WaitForSingleObject(ev, 1500) == WAIT_OBJECT_0;
                     } else {
                         std::thread::sleep(Duration::from_millis(1500));
                     }

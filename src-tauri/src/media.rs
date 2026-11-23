@@ -19,18 +19,9 @@ use windows::Media::Control::{
     MediaPropertiesChangedEventArgs, PlaybackInfoChangedEventArgs, TimelinePropertiesChangedEventArgs,
 };
 use windows::Storage::Streams::DataReader;
-use windows::Win32::Foundation::HGLOBAL;
-use windows::Win32::Graphics::Imaging::{
-    CLSID_WICImagingFactory, GUID_ContainerFormatPng, IWICImagingFactory,
-    WICBitmapEncoderNoCache, WICBitmapInterpolationModeFant, WICDecodeMetadataCacheOnDemand,
-};
-use windows::Win32::System::Com::StructuredStorage::{CreateStreamOnHGlobal, GetHGlobalFromStream};
-use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
-};
-use windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
+use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
 
-use crate::publish;
+use crate::{publish, wic};
 
 /// Разница между эпохой Windows (1601) и Unix (1970) в сотнях наносекунд.
 const EPOCH_DIFF: i64 = 116_444_736_000_000_000;
@@ -108,6 +99,7 @@ fn unix_ms_from_filetime(universal_time: i64) -> i64 {
     }
 }
 
+#[cfg(test)]
 fn fit_128(w: u32, h: u32) -> (u32, u32) {
     let max_dim = w.max(h);
     if max_dim <= MAX_ART_PX || max_dim == 0 {
@@ -119,54 +111,7 @@ fn fit_128(w: u32, h: u32) -> (u32, u32) {
 
 /// Уменьшает обложку через встроенный WIC до 128×128 PNG, чтобы не гонять мегабайты по IPC.
 fn downscale_wic(raw: &[u8]) -> Option<Vec<u8>> {
-    unsafe {
-        let factory: IWICImagingFactory =
-            CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).ok()?;
-        let in_stream = factory.CreateStream().ok()?;
-        in_stream.InitializeFromMemory(raw).ok()?;
-        let decoder = factory
-            .CreateDecoderFromStream(&in_stream, std::ptr::null(), WICDecodeMetadataCacheOnDemand)
-            .ok()?;
-        let frame = decoder.GetFrame(0).ok()?;
-        let (mut w, mut h) = (0u32, 0u32);
-        frame.GetSize(&mut w, &mut h).ok()?;
-        if w <= MAX_ART_PX && h <= MAX_ART_PX && raw.len() <= 65_536 {
-            return None;
-        }
-        let (nw, nh) = fit_128(w, h);
-        let scaler = factory.CreateBitmapScaler().ok()?;
-        scaler
-            .Initialize(&frame, nw, nh, WICBitmapInterpolationModeFant)
-            .ok()?;
-
-        let out_stream = CreateStreamOnHGlobal(HGLOBAL::default(), true).ok()?;
-        let encoder = factory
-            .CreateEncoder(&GUID_ContainerFormatPng, std::ptr::null())
-            .ok()?;
-        encoder.Initialize(&out_stream, WICBitmapEncoderNoCache).ok()?;
-        let mut out_frame = None;
-        let mut props = None;
-        encoder.CreateNewFrame(&mut out_frame, &mut props).ok()?;
-        let out_frame = out_frame?;
-        out_frame.Initialize(props.as_ref()).ok()?;
-        out_frame.SetSize(nw, nh).ok()?;
-        out_frame.WriteSource(&scaler, std::ptr::null()).ok()?;
-        out_frame.Commit().ok()?;
-        encoder.Commit().ok()?;
-
-        let hg = GetHGlobalFromStream(&out_stream).ok()?;
-        let size = GlobalSize(hg);
-        if size == 0 {
-            return None;
-        }
-        let ptr = GlobalLock(hg) as *const u8;
-        if ptr.is_null() {
-            return None;
-        }
-        let bytes = std::slice::from_raw_parts(ptr, size).to_vec();
-        let _ = GlobalUnlock(hg);
-        Some(bytes)
-    }
+    wic::downscale_png(raw, MAX_ART_PX, 65_536)
 }
 
 fn art(props: &Props) -> Option<String> {

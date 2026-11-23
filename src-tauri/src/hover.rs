@@ -335,10 +335,17 @@ pub fn spawn(app: AppHandle) {
         let mut was_lmb = false;
         let mut dragging_from_outside = false;
         let mut drag_dwell_ticks: u8 = 0;
+        let mut near_top = true;
         loop {
-            let sleep_ms = if full { 150 } else { 25 };
+            let sleep_ms = if full {
+                150
+            } else if inside || capture || dragging_from_outside || near_top {
+                25
+            } else {
+                75
+            };
             std::thread::sleep(Duration::from_millis(sleep_ms));
-            tick = tick.wrapping_add(if full { 5 } else { 1 });
+            tick = tick.wrapping_add(if full { 5 } else if sleep_ms > 25 { 3 } else { 1 });
             let Some(win) = app.get_webview_window("island") else { continue };
             let shared = app.state::<Shared>();
             if shared.user_hidden.load(Ordering::Relaxed) {
@@ -363,16 +370,14 @@ pub fn spawn(app: AppHandle) {
             let has_cursor = unsafe { GetCursorPos(&mut p) }.is_ok();
             let interactive = shared.interactive.load(Ordering::Relaxed);
             let dirty = shared.geom_dirty.swap(false, Ordering::Relaxed);
-            let (follow_cursor, align) = {
-                let s = crate::lock(&shared.settings);
-                (s.monitor_mode == "cursor", s.align.clone())
-            };
+            let follow_cursor = crate::lock(&shared.settings).monitor_mode == "cursor";
 
             if dirty
                 || geom.is_none()
-                || tick % 80 == 0
-                || (follow_cursor && tick % 12 == 0 && !inside && !interactive && has_cursor)
+                || tick.is_multiple_of(80)
+                || (follow_cursor && tick.is_multiple_of(12) && !inside && !interactive && has_cursor)
             {
+                let align = crate::lock(&shared.settings).align.clone();
                 let target_mon = if follow_cursor && has_cursor {
                     monitor_at_point(&win, p.x, p.y).or_else(|| current_monitor(&win))
                 } else {
@@ -405,14 +410,14 @@ pub fn spawn(app: AppHandle) {
                 last_fg = cur_fg;
             }
 
-            if fg_changed || tick % 10 == 0 {
+            if fg_changed || tick.is_multiple_of(10) {
                 let b = top_covered(&win);
                 if b != busy {
                     busy = b;
                     let _ = app.emit("topbusy", b);
                 }
             }
-            if fg_changed || tick % 20 == 0 {
+            if fg_changed || tick.is_multiple_of(20) {
                 let f = fullscreen_app(&win);
                 if f != full {
                     full = f;
@@ -433,6 +438,7 @@ pub fn spawn(app: AppHandle) {
             let x1 = x0 + r[2] * scale;
             let y1 = y0 + r[3] * scale;
             let (px, py) = (p.x as f64, p.y as f64);
+            near_top = interactive || (py - pos.y as f64).abs() <= 220.0 * scale;
             let now = !full && r[2] > 0.0 && px >= x0 && px <= x1 && py >= y0 && py <= y1;
 
             // Приём файлов перетаскиванием включается строго в границах самой пилюли (`now`)

@@ -40,13 +40,17 @@ pub fn bluetooth_battery(name: &str) -> Option<u8> {
             if SetupDiGetDeviceRegistryPropertyW(set, &info, SPDRP_FRIENDLYNAME, None, Some(&mut buf), None).is_err() {
                 continue;
             }
-            let wide: Vec<u16> = buf.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|&c| c != 0).collect();
+            let wide: Vec<u16> = buf
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|&c| u16::from_le_bytes(c))
+                .take_while(|&c| c != 0)
+                .collect();
             let dev_name = String::from_utf16_lossy(&wide).to_lowercase();
-            if dev_name.contains(&want) || want.contains(&dev_name) {
-                if level[0] <= 100 {
-                    found = Some(level[0]);
-                    break;
-                }
+            if (dev_name.contains(&want) || want.contains(&dev_name)) && level[0] <= 100 {
+                found = Some(level[0]);
+                break;
             }
         }
         let _ = SetupDiDestroyDeviceInfoList(set);

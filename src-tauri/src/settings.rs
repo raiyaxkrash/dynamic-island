@@ -76,8 +76,16 @@ pub struct Settings {
     pub pomo_work_min: u16,
     /// Длительность перерыва помодоро (мин).
     pub pomo_break_min: u16,
-    /// Режим «Просто капсула»: чистая click-through капсула без раскрытий и всплывающих уведомлений.
+    /// Режим «Просто капсула»: компактная click-through капсула без раскрытий и всплывающих уведомлений.
     pub capsule_only: bool,
+    /// Размер капсулы и мини-плеера: `"compact"`, `"normal"` или `"large"`.
+    pub capsule_size: String,
+    /// Показывать мини-плеер (обложку и эквалайзер) в режиме «Просто капсула».
+    pub capsule_media: bool,
+    /// Показывать мини-таймер в режиме «Просто капсула».
+    pub capsule_timer: bool,
+    /// Показывать часы в режиме «Просто капсула», когда нет музыки и таймера.
+    pub capsule_clock: bool,
     /// Горячая клавиша переключения режима «Просто капсула».
     pub hotkey_capsule: String,
     /// Вид свёрнутого острова над развёрнутым окном: `"sliver"`, `"pill"` или `"hide"`.
@@ -132,6 +140,10 @@ impl Default for Settings {
             pomo_work_min: 25,
             pomo_break_min: 5,
             capsule_only: false,
+            capsule_size: "normal".to_string(),
+            capsule_media: true,
+            capsule_timer: true,
+            capsule_clock: true,
             hotkey_capsule: "Ctrl+Alt+M".to_string(),
             over_maximized: "sliver".to_string(),
         }
@@ -253,10 +265,9 @@ pub fn load_stats(app: &AppHandle, today: &str) -> Stats {
 
 pub fn save_stats(app: &AppHandle, s: &Stats) {
     if let Some(p) = stats_path(app) {
-        if let Some(dir) = p.parent() {
-            let _ = std::fs::create_dir_all(dir);
+        if let Ok(json) = serde_json::to_string(s) {
+            crate::write_atomic(&p, json.as_bytes());
         }
-        let _ = std::fs::write(p, serde_json::to_string(s).unwrap_or_default());
     }
 }
 
@@ -273,10 +284,9 @@ pub fn load(app: &AppHandle) -> Settings {
 
 pub fn save(app: &AppHandle, s: &Settings) {
     if let Some(p) = path(app) {
-        if let Some(dir) = p.parent() {
-            let _ = std::fs::create_dir_all(dir);
+        if let Ok(json) = serde_json::to_string_pretty(s) {
+            crate::write_atomic(&p, json.as_bytes());
         }
-        let _ = std::fs::write(p, serde_json::to_string_pretty(s).unwrap_or_default());
     }
 }
 
@@ -301,7 +311,7 @@ pub fn autostart_enabled() -> bool {
         {
             return false;
         }
-        let mut buf = vec![0u16; (bytes as usize + 1) / 2];
+        let mut buf = vec![0u16; (bytes as usize).div_ceil(2)];
         if RegGetValueW(
             HKEY_CURRENT_USER,
             RUN,

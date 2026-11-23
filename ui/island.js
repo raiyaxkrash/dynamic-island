@@ -37,6 +37,7 @@
     device: [330, 52, 26],
     layout: [176, 36, 18],
     caps: [196, 36, 18],
+    mic: [206, 36, 18],
     done: [420, 62, 31],
   };
   const VIEW = { sliverHot: 'sliver' };
@@ -88,26 +89,18 @@
   let customMin = 10;
 
   // ---------- пружины ----------
-  // Размер и форму ведёт затухающая пружина. Если цель меняется посреди движения, остров
-  // спокойно поворачивает к новой цели, сохраняя скорость, без рывков.
-  // 280/28: почти без перелёта, успокаивается за ~0,45 с — аккуратно, без «прыжков».
-  const SPRING_PRESETS = {
-    soft: [190, 26],
-    normal: [280, 28],
-    bouncy: [340, 19],
-    snappy: [460, 38],
-  };
+  // Размер и форму ведёт затухающая пружина (утилиты в ui/spring.js).
+  const SPRING = window.DI_SPRING;
   const uiScale = () => Math.min(1.15, Math.max(0.85, (st.settings.ui_scale || 100) / 100));
   const pomoWorkMin = () => st.settings.pomo_work_min || 25;
   const pomoBreakMin = () => st.settings.pomo_break_min || 5;
-  const spring = (v, k = 280, c = 28) => ({ v, t: v, vel: 0, k, c, from: v });
   const S = {
-    w: spring(124),
-    h: spring(30),
-    r: spring(15),
-    rt: spring(15),
-    top: spring(6),
-    x: spring(0, 220, 20), // лёгкий сдвиг вбок при переключении трека
+    w: SPRING.create(124),
+    h: SPRING.create(30),
+    r: SPRING.create(15),
+    rt: SPRING.create(15),
+    top: SPRING.create(6),
+    x: SPRING.create(0, 220, 20), // лёгкий сдвиг вбок при переключении трека
   };
   let raf = 0;
   let lastT = 0;
@@ -118,18 +111,7 @@
     const dt = Math.min(gap / 1000, 1 / 30);
     lastT = now;
     if (perf) { perf.n++; perf.max = Math.max(perf.max, gap); perf.sum += gap; }
-    let moving = false;
-    for (const s of Object.values(S)) {
-      const steps = 4;
-      const h = dt / steps;
-      for (let i = 0; i < steps; i++) {
-        const f = -s.k * (s.v - s.t) - s.c * s.vel;
-        s.vel += f * h;
-        s.v += s.vel * h;
-      }
-      if (Math.abs(s.v - s.t) > 0.03 || Math.abs(s.vel) > 0.3) moving = true;
-      else { s.v = s.t; s.vel = 0; }
-    }
+    const moving = SPRING.stepAll(S, dt);
     paint();
     maybeShowView();
     if (moving) raf = requestAnimationFrame(frame);
@@ -155,8 +137,8 @@
     s.transform = sc === 1
       ? `translateX(calc(-50% + ${S.x.v.toFixed(2)}px))`
       : `translateX(calc(-50% + ${S.x.v.toFixed(2)}px)) scale(${sc})`;
-    const dotY = Math.max(4, S.top.v + (h * sc) / 2 - 3);
-    pdots.style.transform = `translate(${((w * sc) / 2 + 8 + S.x.v).toFixed(2)}px, ${dotY.toFixed(2)}px)`;
+    const dotY = Math.max(2, S.top.v + (h * sc) / 2 - 7.5);
+    pdots.style.transform = `translate(${((w * sc) / 2 + 7 + S.x.v).toFixed(2)}px, ${dotY.toFixed(2)}px)`;
   }
   function setTargets(w, h, r, rt, top) {
     for (const [s, t] of [[S.w, w], [S.h, h], [S.r, r], [S.rt, rt], [S.top, top]]) {
@@ -219,8 +201,24 @@
     const h = Math.ceil(el.offsetHeight);
     return maxH ? Math.min(h, maxH) : h;
   }
+  const CAP_SIZES = {
+    compact: { idle: [102, 24, 12], idleSec: [120, 24, 12], mini: [152, 26, 13], tmini: [120, 26, 13] },
+    normal:  { idle: [124, 30, 15], idleSec: [140, 30, 15], mini: [206, 32, 16], tmini: [150, 32, 16] },
+    large:   { idle: [146, 34, 17], idleSec: [162, 34, 17], mini: [244, 36, 18], tmini: [172, 36, 18] },
+  };
+  function capSpec() {
+    return CAP_SIZES[st.settings.capsule_size] || CAP_SIZES.normal;
+  }
   function sizeOf(m) {
-    if (m === 'idle') return [st.settings.idle_style === 'clock' && st.settings.clock_seconds ? 140 : 124, 30, 15];
+    const cs = capSpec();
+    if (m === 'idle') {
+      const showClk = st.settings.capsule_only
+        ? st.settings.capsule_clock !== false
+        : st.settings.idle_style === 'clock';
+      return showClk && st.settings.clock_seconds ? cs.idleSec : cs.idle;
+    }
+    if (m === 'mini') return cs.mini;
+    if (m === 'tmini') return cs.tmini;
     if (m === 'home') return [480, measureHeight($$home), 30];
     if (m === 'audio') return [384, measureHeight(document.querySelector('[data-view="audio"]'), 172), 26];
     if (m === 'shelf') return [412, measureHeight(document.querySelector('[data-view="shelf"]'), 172), 28];
@@ -251,7 +249,11 @@
 
   function mode() {
     if (st.full) return 'hidden';
-    if (st.settings.capsule_only) return 'idle';
+    if (st.settings.capsule_only) {
+      if (st.settings.capsule_media !== false && st.media.active && !st.mediaHidden && !longPaused()) return 'mini';
+      if (st.settings.capsule_timer !== false && timer.running()) return 'tmini';
+      return 'idle';
+    }
     if (st.dragHover) return 'shelf';
     const expanded = st.hover || st.pinned;
     if (st.hud && (st.hud.force || !expanded)) return st.hud.type;
@@ -269,11 +271,12 @@
     const v = VIEW[m] || m;
     const capOnly = !!st.settings.capsule_only;
     island.dataset.mode = m;
-    island.classList.toggle('playing', !capOnly && !!st.media.playing && !st.mediaHidden);
+    island.dataset.capSize = st.settings.capsule_size || 'normal';
+    island.classList.toggle('playing', !!st.media.playing && !st.mediaHidden);
     island.classList.toggle('drag-over', !capOnly && !!st.dragHover);
     mediaRestore.hidden = !(st.media.active && (st.mediaHidden || st.preferHome));
     const [w, h, r] = sizeOf(m);
-    if (m === 'idle' || m === 'home' || m === 'audio' || m === 'shelf' || m === 'clips') {
+    if (m === 'idle' || m === 'mini' || m === 'tmini' || m === 'home' || m === 'audio' || m === 'shelf' || m === 'clips') {
       const viewEl = document.querySelector(`[data-view="${m}"]`);
       if (viewEl) {
         viewEl.style.width = w + 'px';
@@ -282,7 +285,8 @@
     }
     const sliver = v === 'sliver';
     const top = topMargin();
-    island.dataset.idle = capsuleFlash ? 'clock' : (st.settings.idle_style === 'clock' ? 'clock' : 'pill');
+    const showIdleClk = capsuleFlash || (capOnly ? st.settings.capsule_clock !== false : st.settings.idle_style === 'clock');
+    island.dataset.idle = showIdleClk ? 'clock' : 'pill';
     island.classList.toggle('stealth', !capOnly && m === 'idle' && st.settings.idle_style === 'hidden' && !st.pending);
     setTargets(w, h, r, sliver ? 0 : r, sliver ? 0 : top);
     requestView(v);
@@ -657,10 +661,26 @@
     else if (a === 'privacy-settings') invoke('open_privacy_settings').catch(() => {});
     else if (a === 'sound-settings') invoke('open_sound_settings').catch(() => {});
     else if (a === 'open-audio') openAudioPanel();
+    else if (a === 'audio-tab') switchAudioTab(b.dataset.tab);
+    else if (a === 'app-mute') {
+      const pid = +b.dataset.pid;
+      invoke('toggle_app_mute', { pid }).then((muted) => {
+        b.classList.toggle('muted', !!muted);
+        const row = b.closest('.amix-row');
+        if (row) {
+          const pct = row.querySelector('.amix-pct');
+          const fill = row.querySelector('.fill');
+          const vol = +(row.dataset.vol || 100);
+          if (fill) fill.style.transform = `scaleX(${muted ? 0 : vol / 100})`;
+          if (pct) pct.textContent = (muted ? 0 : vol) + '%';
+        }
+      }).catch(() => {});
+    }
     else if (a === 'open-shelf') { st.subview = 'shelf'; render(); }
     else if (a === 'open-clips') { st.subview = 'clips'; render(); }
     else if (a === 'panel-back') { st.subview = null; render(); }
     else if (a === 'mute-toggle') invoke('volume_mute_toggle').catch(() => {});
+    else if (a === 'mic-mute-toggle') invoke('mic_mute_toggle').catch(() => {});
     else if (a === 'toggle-dnd') {
       st.dnd = !st.dnd;
       st.settings.dnd = st.dnd;
@@ -668,7 +688,16 @@
       invoke('set_setting', { key: 'dnd', value: st.dnd }).catch(() => {});
     }
     else if (a === 'open-update') {
-      if (st.update && st.update.url) invoke('open_release_url', { url: st.update.url }).catch(() => {});
+      if (st.update && st.update.download_url) {
+        const badge = $('updBadge');
+        if (badge) badge.textContent = '0%';
+        invoke('install_update').catch(() => {
+          if (badge) badge.textContent = '↑';
+          if (st.update && st.update.url) invoke('open_release_url', { url: st.update.url }).catch(() => {});
+        });
+      } else if (st.update && st.update.url) {
+        invoke('open_release_url', { url: st.update.url }).catch(() => {});
+      }
     }
     else if (a === 'set-audio-dev') {
       invoke('set_audio_device', { id: b.dataset.id }).then(() => { st.subview = null; render(); }).catch(() => {});
@@ -677,7 +706,13 @@
     else if (a === 'shelf-clear') invoke('shelf_clear').catch(() => {});
     else if (a === 'shelf-remove') invoke('shelf_remove', { path: b.dataset.path }).catch(() => {});
     else if (a === 'clips-clear') invoke('clips_clear').catch(() => {});
+    else if (a === 'clip-pin') {
+      e.stopPropagation();
+      const id = +b.dataset.id;
+      if (id) invoke('clip_pin', { id }).catch(() => {});
+    }
     else if (a === 'clip-pick') {
+      if (e.target.closest('.clip-pin')) return;
       const idx = +b.dataset.idx;
       const item = st.clips[idx];
       if (item) {
@@ -872,8 +907,12 @@
     $('soundSettingsBtn').title = $('soundSettingsBtn').ariaLabel = T('sound_settings');
     $('muteBtn').title = $('muteBtn').ariaLabel = T('mute_toggle');
     $('shelfBtn').title = $('shelfBtn').ariaLabel = T('shelf_open');
+    const dragAll = $('shelfDragAllBtn');
+    if (dragAll) dragAll.title = T('shelf_drag_all_tip');
     $('clipsBtn').title = $('clipsBtn').ariaLabel = T('clips_open');
     $('dndBtn').title = $('dndBtn').ariaLabel = T('dnd_tip');
+    const micBtn = $('micMuteBtn');
+    if (micBtn) micBtn.title = micBtn.ariaLabel = T('mic_mute_tip');
     $('gearBtn').title = $('gearBtn').ariaLabel = T('settings');
     if (st.update && st.update.available) $('updBadge').title = T('upd_badge', { v: st.update.version });
     $('vClipLbl') && ($('vClipLbl').textContent = T('copied'));
@@ -906,11 +945,7 @@
       st.subview = null;
       st.hud = null;
     }
-    const [sk, sc] = SPRING_PRESETS[st.settings.spring_preset] || SPRING_PRESETS.normal;
-    for (const key of ['w', 'h', 'r', 'rt', 'top']) {
-      S[key].k = sk;
-      S[key].c = sc;
-    }
+    SPRING.applyPreset(S, ['w', 'h', 'r', 'rt', 'top'], st.settings.spring_preset);
     island.dataset.border = st.settings.border_style || 'subtle';
     island.dataset.backdrop = st.settings.backdrop || 'oled';
     syncAccent();
@@ -963,8 +998,15 @@
     if (!st.hover && !st.pinned) setHud('device', 3400);
   }
 
-  async function openAudioPanel() {
-    st.subview = 'audio';
+  let audioTab = 'devices';
+  function syncAudioTabs() {
+    document.querySelectorAll('#audioTabs .atab').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.tab === audioTab);
+    });
+    $('audioList').hidden = audioTab !== 'devices';
+    $('mixerList').hidden = audioTab !== 'mixer';
+  }
+  async function loadAudioDevices() {
     const list = await invoke('get_audio_devices').catch(() => []);
     const box = $('audioList');
     box.innerHTML = '';
@@ -978,24 +1020,141 @@
       btn.querySelector('.adev-name').textContent = dev.name;
       box.appendChild(btn);
     }
+  }
+  async function loadAudioMixer() {
+    const sessions = await invoke('get_audio_sessions').catch(() => []);
+    const box = $('mixerList');
+    box.innerHTML = '';
+    if (!sessions.length) {
+      const empty = document.createElement('div');
+      empty.className = 'amix-empty';
+      empty.textContent = T('mixer_empty');
+      box.appendChild(empty);
+      return;
+    }
+    for (const s of sessions) {
+      const row = document.createElement('div');
+      row.className = 'amix-row';
+      row.dataset.vol = String(s.volume);
+      const mute = document.createElement('button');
+      mute.type = 'button';
+      mute.className = 'round sm mute-btn amix-mute' + (s.muted || s.volume === 0 ? ' muted' : '');
+      mute.dataset.a = 'app-mute';
+      mute.dataset.pid = String(s.pid);
+      mute.innerHTML = '<svg class="i-unmuted" viewBox="0 0 24 24"><path d="M4 9.5h3.2L12 5.6v12.8l-4.8-3.9H4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1Z" fill="currentColor"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><svg class="i-muted" viewBox="0 0 24 24"><path d="M4 9.5h3.2L12 5.6v12.8l-4.8-3.9H4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1Z" fill="currentColor"/><path d="M16 9.5l5 5m0-5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+      const name = document.createElement('span');
+      name.className = 'amix-name';
+      name.textContent = s.name;
+      name.title = s.name;
+      const hit = document.createElement('div');
+      hit.className = 'track-hit amix-hit';
+      hit.innerHTML = '<div class="track"><div class="fill"></div></div>';
+      const fill = hit.querySelector('.fill');
+      fill.style.transform = `scaleX(${s.muted ? 0 : s.volume / 100})`;
+      const pct = document.createElement('span');
+      pct.className = 'amix-pct';
+      pct.textContent = (s.muted ? 0 : s.volume) + '%';
+
+      let drag = false;
+      let sentAt = 0;
+      const frac = (e) => {
+        const r = hit.getBoundingClientRect();
+        return Math.min(Math.max((e.clientX - r.left) / (r.width || 1), 0), 1);
+      };
+      const push = (f, force) => {
+        const lvl = Math.round(f * 100);
+        row.dataset.vol = String(lvl);
+        fill.style.transform = `scaleX(${f.toFixed(3)})`;
+        pct.textContent = lvl + '%';
+        mute.classList.toggle('muted', lvl === 0);
+        const now = performance.now();
+        if (force || now - sentAt > 35) {
+          sentAt = now;
+          invoke('set_app_volume', { pid: s.pid, level: f }).catch(() => {});
+        }
+      };
+      hit.addEventListener('pointerdown', (e) => {
+        drag = true;
+        hit.classList.add('drag');
+        hit.setPointerCapture(e.pointerId);
+        push(frac(e), true);
+      });
+      hit.addEventListener('pointermove', (e) => { if (drag) push(frac(e), false); });
+      hit.addEventListener('pointerup', (e) => {
+        if (!drag) return;
+        drag = false;
+        hit.classList.remove('drag');
+        push(frac(e), true);
+      });
+
+      row.append(mute, name, hit, pct);
+      box.appendChild(row);
+    }
+  }
+  async function switchAudioTab(tab) {
+    audioTab = tab === 'mixer' ? 'mixer' : 'devices';
+    syncAudioTabs();
+    if (audioTab === 'mixer') await loadAudioMixer();
+    else await loadAudioDevices();
+    render();
+  }
+  async function openAudioPanel() {
+    st.subview = 'audio';
+    syncAudioTabs();
+    if (audioTab === 'mixer') await loadAudioMixer();
+    else await loadAudioDevices();
     render();
   }
 
   // ---------- полка файлов (drag & drop) ----------
+  const dragAllBtn = $('shelfDragAllBtn');
+  if (dragAllBtn) {
+    dragAllBtn.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || st.shelf.length === 0) return;
+      const x0 = e.clientX, y0 = e.clientY;
+      const onMove = (ev) => {
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 6) {
+          cleanup();
+          invoke('shelf_drag_all').catch(() => {});
+        }
+      };
+      const cleanup = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', cleanup);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', cleanup);
+    });
+  }
+  function shelfBadge(item) {
+    if (item.is_dir) return ['DIR', 'b-dir'];
+    const m = /\.([a-z0-9]{1,5})$/i.exec(item.name || '');
+    const ext = m ? m[1].toUpperCase() : 'FILE';
+    if (ext === 'PDF') return [ext, 'b-pdf'];
+    if (/^(PNG|JPG|JPEG|WEBP|GIF|SVG|BMP|ICO|AVIF)$/.test(ext)) return [ext, 'b-img'];
+    if (/^(ZIP|RAR|7Z|TAR|GZ|XZ)$/.test(ext)) return [ext, 'b-zip'];
+    if (/^(DOC|DOCX|TXT|MD|RTF|XLS|XLSX|PPT|PPTX|CSV)$/.test(ext)) return [ext, 'b-doc'];
+    if (/^(JS|TS|RS|PY|GO|C|CPP|H|HTML|CSS|JSON|TOML|YAML|YML|SH|PS1|SQL)$/.test(ext)) return [ext, 'b-code'];
+    if (/^(MP3|WAV|FLAC|OGG|MP4|MKV|MOV|AVI|WEBM)$/.test(ext)) return [ext, 'b-media'];
+    return [ext.slice(0, 4), ''];
+  }
   function applyShelf(items) {
     st.shelf = Array.isArray(items) ? items : [];
     const btn = $('shelfBtn');
     btn.hidden = st.shelf.length === 0;
     $('shelfCount').textContent = String(st.shelf.length);
     $('shelfClearBtn').hidden = st.shelf.length === 0;
+    if (dragAllBtn) dragAllBtn.hidden = st.shelf.length < 2;
     const grid = $('shelfGrid');
     grid.innerHTML = '';
     for (const item of st.shelf) {
       const chip = document.createElement('div');
       chip.className = 'shelf-item';
       chip.title = T('shelf_item_tip', { path: item.path });
+      const [badgeTxt, badgeCls] = shelfBadge(item);
       const ico = document.createElement('span');
-      ico.textContent = item.is_dir ? '📁' : '📄';
+      ico.className = 'shelf-badge' + (badgeCls ? ' ' + badgeCls : '');
+      ico.textContent = badgeTxt;
       const name = document.createElement('span');
       name.className = 'shelf-name';
       name.textContent = item.name;
@@ -1056,13 +1215,22 @@
     $('clipsEmpty').hidden = st.clips.length > 0;
     const list = $('clipsList');
     list.innerHTML = '';
+    const PIN_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4.5 19.5 9l-3 1.5-2.5 2.5.5 3.5-2 2-3.5-3.5-4 4-.5-.5 4-4-3.5-3.5 2-2 3.5.5 2.5-2.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>';
     st.clips.forEach((raw, i) => {
-      const item = typeof raw === 'string' ? { id: i + 1, kind: 'text', text: raw } : raw;
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'adev';
+      const item = typeof raw === 'string' ? { id: i + 1, kind: 'text', text: raw, pinned: false } : raw;
+      const btn = document.createElement('div');
+      btn.setAttribute('role', 'button');
+      btn.tabIndex = 0;
+      btn.className = 'adev' + (item.pinned ? ' pinned' : '');
       btn.dataset.a = 'clip-pick';
       btn.dataset.idx = String(i);
+      const pinBtn = document.createElement('button');
+      pinBtn.type = 'button';
+      pinBtn.className = 'clip-pin' + (item.pinned ? ' on' : '');
+      pinBtn.dataset.a = 'clip-pin';
+      pinBtn.dataset.id = String(item.id);
+      pinBtn.title = T('clip_pin');
+      pinBtn.innerHTML = PIN_SVG;
       if (item.kind === 'image') {
         btn.title = T('clip_img_tip', { dim: item.text || 'PNG' });
         if (item.preview) {
@@ -1077,9 +1245,9 @@
         name.textContent = `${T('image')} · ${item.text || 'PNG'}`;
         const chk = document.createElement('span');
         chk.className = 'adev-chk';
-        btn.append(name, chk);
+        btn.append(name, chk, pinBtn);
         btn.addEventListener('pointerdown', (e) => {
-          if (e.button !== 0) return;
+          if (e.button !== 0 || e.target.closest('.clip-pin')) return;
           const x0 = e.clientX, y0 = e.clientY;
           const onMove = (ev) => {
             if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 6) {
@@ -1097,8 +1265,12 @@
       } else {
         const txt = item.text || '';
         btn.title = txt.slice(0, 300);
-        btn.innerHTML = '<span class="adev-name"></span><span class="adev-chk"></span>';
-        btn.querySelector('.adev-name').textContent = txt.replace(/\s+/g, ' ').trim();
+        const name = document.createElement('span');
+        name.className = 'adev-name';
+        name.textContent = txt.replace(/\s+/g, ' ').trim();
+        const chk = document.createElement('span');
+        chk.className = 'adev-chk';
+        btn.append(name, chk, pinBtn);
       }
       list.appendChild(btn);
     });
@@ -1114,7 +1286,13 @@
     render();
   }
 
-  // ---------- загрузка системы и помодоро ----------
+  // ---------- загрузка системы, сеть и помодоро ----------
+  function fmtRate(bps) {
+    const n = bps || 0;
+    if (n >= 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + 'M';
+    if (n >= 1024) return Math.round(n / 1024) + 'K';
+    return '0';
+  }
   function applySys(v) {
     st.sys = v;
     for (const [k, el, val] of [['cpu', 'cpuFill', 'cpuVal'], ['mem', 'memFill', 'memVal']]) {
@@ -1128,7 +1306,60 @@
       const memMeter = $('memFill').closest('.meter');
       if (memMeter) memMeter.title = T('mem_detail', { u: v.usedGb, t: v.totalGb });
     }
+    const rxEl = $('netRx');
+    const txEl = $('netTx');
+    if (rxEl && txEl && v) {
+      rxEl.textContent = '↓' + fmtRate(v.rxBps);
+      txEl.textContent = '↑' + fmtRate(v.txBps);
+    }
   }
+
+  function applyMicMute(m) {
+    if (!m) return;
+    const muted = !!m.muted;
+    const btn = $('micMuteBtn');
+    if (btn) btn.classList.toggle('muted', muted);
+    const v = island.querySelector('.v-mic');
+    if (v) v.classList.toggle('muted', muted);
+    const lbl = $('micHudState');
+    if (lbl) lbl.textContent = muted ? T('mic_muted') : T('mic_live');
+    if (!m.silent && !st.hover && !st.pinned) setHud('mic', 1500);
+  }
+
+  // ---------- клавиатурная навигация внутри раскрытого острова ----------
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (st.subview) {
+        st.subview = null;
+        render();
+      } else if (st.pinned || st.hover) {
+        st.pinned = false;
+        st.hover = false;
+        st.preferHome = false;
+        render();
+      }
+      return;
+    }
+    if (e.key === ' ' && island.dataset.mode === 'music' && !e.target.closest('button')) {
+      e.preventDefault();
+      media('toggle');
+      return;
+    }
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && (st.subview === 'audio' || st.subview === 'clips')) {
+      const list = st.subview === 'audio' ? $('audioList') : $('clipsList');
+      const items = [...list.querySelectorAll('.adev')];
+      if (!items.length) return;
+      e.preventDefault();
+      const idx = items.indexOf(document.activeElement);
+      const next = e.key === 'ArrowDown'
+        ? (idx + 1) % items.length
+        : (idx - 1 + items.length) % items.length;
+      items[next].focus();
+    } else if (e.key === 'Enter' && document.activeElement?.classList.contains('adev')) {
+      e.preventDefault();
+      document.activeElement.click();
+    }
+  });
 
   // ---------- перемотка по полоске прогресса ----------
   const seekEl = $('seek');
@@ -1229,6 +1460,13 @@
   listen('shelf', (e) => applyShelf(e.payload));
   listen('clips', (e) => applyClips(e.payload));
   listen('update', (e) => applyUpdate(e.payload));
+  listen('update-progress', (e) => {
+    const badge = $('updBadge');
+    if (badge && !badge.hidden) {
+      const p = Math.min(100, Math.max(0, Number(e.payload) || 0));
+      badge.textContent = p >= 100 ? '✓' : `${p}%`;
+    }
+  });
   listen('topbusy', (e) => { st.topbusy = !!e.payload; render(); });
   listen('fullscreen', (e) => { st.full = !!e.payload; render(); });
   listen('media', (e) => applyMedia(e.payload, false));
@@ -1247,6 +1485,7 @@
     applyVolume(e.payload);
     if (!e.payload.silent) setHud('volume', 1600, Date.now() < wheelUntil);
   });
+  listen('mic-mute', (e) => applyMicMute(e.payload));
 
   // ---------- демо-режим (отладка): проигрывает переходы и меряет кадры ----------
   function finishPerf() {
@@ -1290,6 +1529,7 @@
     if (s.settings) applySettings(s.settings);
     if (s.power) applyPower(s.power, true);
     if (s.volume) applyVolume(s.volume);
+    if (s['mic-mute']) applyMicMute(s['mic-mute']);
     if (s.privacy) applyPrivacy(s.privacy);
     if (s.device) applyDevice(s.device, true);
     if (s.shelf) applyShelf(s.shelf);

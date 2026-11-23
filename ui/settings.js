@@ -1,6 +1,7 @@
 // Логика окна настроек (внешний скрипт для строгой совместимости с CSP `script-src 'self'`).
 (() => {
   const { invoke } = window.__TAURI__.core;
+  const { listen } = window.__TAURI__.event;
   const win = window.__TAURI__.window.getCurrentWindow();
   const I18N = window.DI_I18N;
 
@@ -17,6 +18,8 @@
   let cur = {};
   let recording = null;
   let releaseUrl = '';
+  let canInstall = false;
+  let installing = false;
   let shown = false;
 
   function lang() { return I18N.resolveLang(cur.lang); }
@@ -69,6 +72,14 @@
       w: s.pomodoros_week || 0,
       s: s.pomodoros_streak || 0,
     });
+    if (s.update && s.update.available && !installing) {
+      releaseUrl = s.update.url || '';
+      canInstall = !!s.update.download_url;
+      updStatus.classList.remove('err');
+      updStatus.textContent = T('s_upd_avail', { v: s.update.version });
+      updBtn.textContent = T('s_upd_avail', { v: s.update.version });
+      updBtn.classList.add('accent');
+    }
 
     if (!shown) {
       shown = true;
@@ -122,9 +133,35 @@
     });
   }
 
+  listen('update-progress', (e) => {
+    const p = Math.min(100, Math.max(0, Number(e.payload) || 0));
+    const txt = p >= 100 ? T('s_upd_launching') : T('s_upd_downloading', { p });
+    updStatus.textContent = txt;
+    updBtn.textContent = txt;
+  });
+
   updBtn.addEventListener('click', async () => {
+    if (installing) return;
     if (releaseUrl) {
-      invoke('open_release_url', { url: releaseUrl }).catch(() => {});
+      if (canInstall) {
+        installing = true;
+        updBtn.disabled = true;
+        updStatus.classList.remove('err');
+        updStatus.textContent = T('s_upd_downloading', { p: 0 });
+        try {
+          await invoke('install_update');
+        } catch {
+          canInstall = false;
+          updStatus.classList.add('err');
+          updStatus.textContent = T('s_upd_dl_err');
+          updBtn.textContent = 'GitHub';
+        } finally {
+          installing = false;
+          updBtn.disabled = false;
+        }
+      } else {
+        invoke('open_release_url', { url: releaseUrl }).catch(() => {});
+      }
       return;
     }
     updBtn.disabled = true;
@@ -134,6 +171,7 @@
       const info = await invoke('check_update');
       if (info && info.available) {
         releaseUrl = info.url;
+        canInstall = !!info.download_url;
         updStatus.textContent = T('s_upd_avail', { v: info.version });
         updBtn.textContent = T('s_upd_avail', { v: info.version });
         updBtn.classList.add('accent');

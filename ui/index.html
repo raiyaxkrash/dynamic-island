@@ -62,6 +62,10 @@
           <button type="button" class="media-visibility media-restore" id="mediaRestore" data-a="show-media" aria-label="Вернуть плеер" title="Вернуть плеер" hidden>
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5.5" width="17" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="m10 8.8 5 3.2-5 3.2Z" fill="currentColor"/></svg>
           </button>
+          <button type="button" class="gear mic-btn" id="micMuteBtn" data-a="mic-mute-toggle" aria-label="Микрофон">
+            <svg class="i-mic-on" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3.5" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M6.5 11.5a5.5 5.5 0 0 0 11 0M12 17v3.5M9 20.5h6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            <svg class="i-mic-off" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3.5" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M6.5 11.5a5.5 5.5 0 0 0 11 0M12 17v3.5M4.5 4.5l15 15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          </button>
           <button type="button" class="gear dnd-btn" id="dndBtn" data-a="toggle-dnd" aria-label="Тихий режим">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 14.5A7.5 7.5 0 0 1 9.5 4.5a7.5 7.5 0 1 0 10 10Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
           </button>
@@ -74,6 +78,7 @@
       <div class="sys st" id="sysRow" style="--i:2">
         <div class="meter"><span class="ml" data-i18n="cpu">ЦП</span><span class="mt"><span class="mf" id="cpuFill"></span></span><span class="mv" id="cpuVal">0%</span></div>
         <div class="meter"><span class="ml" data-i18n="mem">Память</span><span class="mt"><span class="mf" id="memFill"></span></span><span class="mv" id="memVal">0%</span></div>
+        <div class="net-meter" id="netMeter" title="Сеть ↓ / ↑"><span class="net-rx" id="netRx">↓0</span><span class="net-tx" id="netTx">↑0</span></div>
       </div>
       <div class="h-timer st" style="--i:3">
         <div class="presets" id="presets">
@@ -222,6 +227,13 @@
       <span class="caps-state" id="capsState">вкл</span>
     </div>
 
+    <!-- микрофон вкл / выкл -->
+    <div class="view v-mic" data-view="mic">
+      <svg class="mic-hud-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3.5" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6.5 11.5a5.5 5.5 0 0 0 11 0M12 17v3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path class="mic-slash" d="M4.5 4.5l15 15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+      <span class="lbl" data-i18n="mic">Микрофон</span>
+      <span class="mic-state" id="micHudState">выкл</span>
+    </div>
+
     <!-- скопировано -->
     <div class="view v-clip" data-view="clip">
       <svg class="clip-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M15.5 8V6.5A2.5 2.5 0 0 0 13 4H7.5A2.5 2.5 0 0 0 5 6.5V13a2.5 2.5 0 0 0 2.5 2.5H8" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
@@ -242,13 +254,16 @@
       </button>
     </div>
 
-    <!-- выбор устройства вывода звука -->
+    <!-- выбор устройства вывода звука и микшер приложений -->
     <div class="view v-panel" data-view="audio">
       <div class="p-head">
         <button type="button" class="round sm" data-a="panel-back" aria-label="Назад">
           <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <span class="p-title" data-i18n="audio_title">Вывод звука</span>
+        <div class="audio-tabs" id="audioTabs">
+          <button type="button" class="atab active" data-a="audio-tab" data-tab="devices" data-i18n="audio_tab_devices">Устройства</button>
+          <button type="button" class="atab" data-a="audio-tab" data-tab="mixer" data-i18n="audio_tab_mixer">Микшер</button>
+        </div>
         <button type="button" class="round sm" data-a="sound-settings" id="soundSettingsBtn" aria-label="Параметры звука">
           <svg viewBox="0 0 24 24"><path d="M14 5h6v6M20 5l-9 9M10 7H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
@@ -262,6 +277,7 @@
         <span class="a-vol-pct" id="aVolPct">100%</span>
       </div>
       <div class="audio-list audio-devs" id="audioList"></div>
+      <div class="audio-list audio-devs" id="mixerList" hidden></div>
     </div>
 
     <!-- полка файлов (drag & drop) -->
@@ -271,6 +287,7 @@
           <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <span class="p-title" data-i18n="shelf_title">Полка файлов</span>
+        <button type="button" class="pill sm-pill shelf-drag-all" id="shelfDragAllBtn" data-i18n="shelf_drag_all" hidden>Тянуть всё</button>
         <button type="button" class="pill sm-pill" id="shelfPasteBtn" data-a="shelf-paste" data-i18n="shelf_paste">+ Из буфера</button>
         <button type="button" class="pill sm-pill" id="shelfClearBtn" data-a="shelf-clear" data-i18n="shelf_clear">Очистить</button>
       </div>
@@ -293,6 +310,7 @@
   </div>
 
   <script src="i18n.js"></script>
+  <script src="spring.js"></script>
   <script src="island.js"></script>
 </body>
 </html>

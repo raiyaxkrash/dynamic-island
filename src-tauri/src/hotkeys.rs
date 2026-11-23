@@ -11,7 +11,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT,
     MOD_SHIFT,
 };
-use windows::Win32::UI::WindowsAndMessaging::{DefWindowProcW, PostMessageW, WM_APP, WM_HOTKEY};
+use windows::Win32::UI::WindowsAndMessaging::{DefWindowProcW, SendMessageW, WM_APP, WM_HOTKEY};
 
 use crate::{winmsg, Shared};
 
@@ -162,7 +162,7 @@ pub fn sync() {
     let raw = HOTKEY_HWND.load(Ordering::Relaxed);
     if raw != 0 {
         unsafe {
-            let _ = PostMessageW(Some(HWND(raw as _)), WM_SYNC_HOTKEYS, WPARAM(0), LPARAM(0));
+            let _ = SendMessageW(HWND(raw as _), WM_SYNC_HOTKEYS, Some(WPARAM(0)), Some(LPARAM(0)));
         }
     }
 }

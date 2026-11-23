@@ -46,10 +46,9 @@ pub fn load(app: &AppHandle) -> Vec<ShelfItem> {
 
 pub fn save(app: &AppHandle, items: &[ShelfItem]) {
     if let Some(p) = shelf_path(app) {
-        if let Some(dir) = p.parent() {
-            let _ = std::fs::create_dir_all(dir);
+        if let Ok(json) = serde_json::to_string(items) {
+            crate::write_atomic(&p, json.as_bytes());
         }
-        let _ = std::fs::write(p, serde_json::to_string(items).unwrap_or_default());
     }
 }
 
@@ -131,23 +130,41 @@ impl IDropSource_Impl for DropSource_Impl {
     }
 }
 
-/// Запускает системный OLE Drag & Drop для файла на отдельной STA-нити.
+/// Запускает системный OLE Drag & Drop для одного файла на отдельной STA-нити.
 pub fn start_drag(path: String) {
-    if !Path::new(&path).exists() {
+    start_drag_many(vec![path]);
+}
+
+/// Запускает системный OLE Drag & Drop для одного или нескольких файлов сразу на отдельной STA-нити.
+pub fn start_drag_many(paths: Vec<String>) {
+    let existing: Vec<String> = paths
+        .into_iter()
+        .filter(|p| Path::new(p).exists())
+        .collect();
+    if existing.is_empty() {
         return;
     }
     std::thread::spawn(move || unsafe {
         let ole_ok = OleInitialize(None).is_ok();
-        let wide = HSTRING::from(path.as_str());
-        let pidl: *mut ITEMIDLIST = ILCreateFromPathW(PCWSTR(wide.as_ptr()));
-        if !pidl.is_null() {
-            let pidls = [pidl as *const ITEMIDLIST];
-            if let Ok(data_obj) = SHCreateDataObject::<_, IDataObject>(None, Some(&pidls), None) {
+        let mut raw_pidls: Vec<*mut ITEMIDLIST> = Vec::with_capacity(existing.len());
+        for path in &existing {
+            let wide = HSTRING::from(path.as_str());
+            let pidl: *mut ITEMIDLIST = ILCreateFromPathW(PCWSTR(wide.as_ptr()));
+            if !pidl.is_null() {
+                raw_pidls.push(pidl);
+            }
+        }
+        if !raw_pidls.is_empty() {
+            let const_pidls: Vec<*const ITEMIDLIST> =
+                raw_pidls.iter().map(|&p| p as *const ITEMIDLIST).collect();
+            if let Ok(data_obj) = SHCreateDataObject::<_, IDataObject>(None, Some(&const_pidls), None) {
                 let src: IDropSource = DropSource.into();
                 let mut effect = DROPEFFECT(0);
                 let _ = DoDragDrop(&data_obj, &src, DROPEFFECT_COPY | DROPEFFECT_LINK, &mut effect);
             }
-            ILFree(Some(pidl as *const ITEMIDLIST));
+            for pidl in raw_pidls {
+                ILFree(Some(pidl as *const ITEMIDLIST));
+            }
         }
         if ole_ok {
             OleUninitialize();

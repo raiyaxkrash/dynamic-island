@@ -9,21 +9,11 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use base64::Engine;
 use serde::Serialize;
 use serde_json::json;
 use tauri::{AppHandle, Manager};
 use windows::core::w;
 use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL, HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::Graphics::Imaging::{
-    CLSID_WICImagingFactory, GUID_ContainerFormatPng, GUID_WICPixelFormat32bppBGRA,
-    IWICBitmapSource, IWICImagingFactory, WICBitmapEncoderNoCache, WICBitmapInterpolationModeFant,
-    WICConvertBitmapSource, WICDecodeMetadataCacheOnDemand,
-};
-use windows::Win32::System::Com::StructuredStorage::{CreateStreamOnHGlobal, GetHGlobalFromStream};
-use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
-};
 use windows::Win32::System::DataExchange::{
     AddClipboardFormatListener, CloseClipboard, EmptyClipboard, GetClipboardData,
     GetClipboardSequenceNumber, IsClipboardFormatAvailable, OpenClipboard,
@@ -35,7 +25,7 @@ use windows::Win32::System::Memory::{
 use windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
 use windows::Win32::UI::WindowsAndMessaging::{DefWindowProcW, WM_CLIPBOARDUPDATE};
 
-use crate::{publish, shelf, winmsg, Shared};
+use crate::{publish, shelf, wic, winmsg, Shared};
 
 const CF_BITMAP: u32 = 2;
 const CF_DIB: u32 = 8;
@@ -53,6 +43,7 @@ pub struct ClipItem {
     pub kind: &'static str, // "text" | "image"
     pub text: String,
     pub preview: Option<String>,
+    pub pinned: bool,
     #[serde(skip)]
     pub png: Option<Vec<u8>>,
 }
@@ -163,116 +154,14 @@ pub fn dib_to_bmp(dib: &[u8]) -> Option<Vec<u8>> {
     Some(bmp)
 }
 
-unsafe fn encode_source_png(factory: &IWICImagingFactory, src: &IWICBitmapSource, w: u32, h: u32) -> Option<Vec<u8>> {
-    let out_stream = CreateStreamOnHGlobal(HGLOBAL::default(), true).ok()?;
-    let encoder = factory.CreateEncoder(&GUID_ContainerFormatPng, std::ptr::null()).ok()?;
-    encoder.Initialize(&out_stream, WICBitmapEncoderNoCache).ok()?;
-    let mut out_frame = None;
-    let mut props = None;
-    encoder.CreateNewFrame(&mut out_frame, &mut props).ok()?;
-    let out_frame = out_frame?;
-    out_frame.Initialize(props.as_ref()).ok()?;
-    out_frame.SetSize(w, h).ok()?;
-    out_frame.WriteSource(src, std::ptr::null()).ok()?;
-    out_frame.Commit().ok()?;
-    encoder.Commit().ok()?;
-
-    let hg = GetHGlobalFromStream(&out_stream).ok()?;
-    let size = GlobalSize(hg);
-    if size == 0 {
-        return None;
-    }
-    let ptr = GlobalLock(hg) as *const u8;
-    if ptr.is_null() {
-        return None;
-    }
-    let bytes = std::slice::from_raw_parts(ptr, size).to_vec();
-    let _ = GlobalUnlock(hg);
-    Some(bytes)
-}
-
 /// Декодирует изображение (PNG или BMP) через WIC и возвращает `(полный_PNG, миниатюра_data_url, w, h)`.
 pub fn decode_to_png_and_thumb(raw: &[u8], already_png: bool) -> Option<(Vec<u8>, String, u32, u32)> {
-    unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-        let factory: IWICImagingFactory =
-            CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).ok()?;
-        let in_stream = factory.CreateStream().ok()?;
-        in_stream.InitializeFromMemory(raw).ok()?;
-        let decoder = factory
-            .CreateDecoderFromStream(&in_stream, std::ptr::null(), WICDecodeMetadataCacheOnDemand)
-            .ok()?;
-        let frame = decoder.GetFrame(0).ok()?;
-        let (mut w, mut h) = (0u32, 0u32);
-        frame.GetSize(&mut w, &mut h).ok()?;
-        if w == 0 || h == 0 || w > 8192 || h > 8192 {
-            return None;
-        }
-        let full_png = if already_png {
-            raw.to_vec()
-        } else {
-            let src: IWICBitmapSource = windows::core::Interface::cast(&frame).ok()?;
-            encode_source_png(&factory, &src, w, h)?
-        };
-        if full_png.len() > 8 * 1024 * 1024 {
-            return None;
-        }
-
-        let max_dim = w.max(h);
-        let thumb_png = if max_dim <= THUMB_PX {
-            full_png.clone()
-        } else {
-            let scale = THUMB_PX as f64 / max_dim as f64;
-            let tw = ((w as f64 * scale).round() as u32).max(1);
-            let th = ((h as f64 * scale).round() as u32).max(1);
-            let scaler = factory.CreateBitmapScaler().ok()?;
-            scaler.Initialize(&frame, tw, th, WICBitmapInterpolationModeFant).ok()?;
-            let src: IWICBitmapSource = windows::core::Interface::cast(&scaler).ok()?;
-            encode_source_png(&factory, &src, tw, th)?
-        };
-        let preview = format!(
-            "data:image/png;base64,{}",
-            base64::engine::general_purpose::STANDARD.encode(&thumb_png)
-        );
-        Some((full_png, preview, w, h))
-    }
+    wic::decode_to_png_and_thumb(raw, already_png, THUMB_PX)
 }
 
-/// Конвертирует PNG в 32-битный `CF_DIB` (`BITMAPINFOHEADER` + BGRA bottom-up) для классических Win32-приложений.
+/// Конвертирует PNG в 32-битный `CF_DIB` (`BITMAPINFOHEADER` + BGRA top-down) для классических Win32-приложений.
 fn png_to_dib(png: &[u8]) -> Option<Vec<u8>> {
-    unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-        let factory: IWICImagingFactory =
-            CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).ok()?;
-        let in_stream = factory.CreateStream().ok()?;
-        in_stream.InitializeFromMemory(png).ok()?;
-        let decoder = factory
-            .CreateDecoderFromStream(&in_stream, std::ptr::null(), WICDecodeMetadataCacheOnDemand)
-            .ok()?;
-        let frame = decoder.GetFrame(0).ok()?;
-        let (mut w, mut h) = (0u32, 0u32);
-        frame.GetSize(&mut w, &mut h).ok()?;
-        let bgra = WICConvertBitmapSource(&GUID_WICPixelFormat32bppBGRA, &frame).ok()?;
-        let stride = w.checked_mul(4)?;
-        let img_bytes = stride.checked_mul(h)? as usize;
-        let mut top_down = vec![0u8; img_bytes];
-        bgra.CopyPixels(std::ptr::null(), stride, &mut top_down).ok()?;
-
-        let mut dib = Vec::with_capacity(40 + img_bytes);
-        dib.extend_from_slice(&40u32.to_le_bytes()); // biSize
-        dib.extend_from_slice(&(w as i32).to_le_bytes()); // biWidth
-        dib.extend_from_slice(&(-(h as i32)).to_le_bytes()); // top-down biHeight
-        dib.extend_from_slice(&1u16.to_le_bytes()); // biPlanes
-        dib.extend_from_slice(&32u16.to_le_bytes()); // biBitCount
-        dib.extend_from_slice(&0u32.to_le_bytes()); // BI_RGB
-        dib.extend_from_slice(&(img_bytes as u32).to_le_bytes());
-        dib.extend_from_slice(&0i32.to_le_bytes());
-        dib.extend_from_slice(&0i32.to_le_bytes());
-        dib.extend_from_slice(&0u32.to_le_bytes());
-        dib.extend_from_slice(&0u32.to_le_bytes());
-        dib.extend_from_slice(&top_down);
-        Some(dib)
-    }
+    wic::png_to_dib(png)
 }
 
 fn format_snippet(s: &str) -> Option<String> {
@@ -322,29 +211,51 @@ unsafe fn read_image_item() -> Option<ClipItem> {
         kind: "image",
         text: format!("{w}×{h}"),
         preview: Some(preview),
+        pinned: false,
         png: Some(png),
     })
 }
 
-pub fn push_clip_item(list: &mut Vec<ClipItem>, item: ClipItem) -> bool {
+fn sort_pinned_first(list: &mut [ClipItem]) {
+    list.sort_by_key(|item| !item.pinned);
+}
+
+pub fn push_clip_item(list: &mut Vec<ClipItem>, mut item: ClipItem) -> bool {
     if item.kind == "text" && item.text.is_empty() {
         return false;
     }
     if item.kind == "text" {
-        list.retain(|x| !(x.kind == "text" && x.text == item.text));
+        if let Some(pos) = list.iter().position(|x| x.kind == "text" && x.text == item.text) {
+            item.pinned = list[pos].pinned;
+            list.remove(pos);
+        }
     } else if let Some(new_png) = item.png.as_ref() {
         if list
-            .first()
-            .and_then(|top| top.png.as_ref())
-            .is_some_and(|old| old == new_png)
+            .iter()
+            .any(|old| old.png.as_ref().is_some_and(|b| b == new_png))
         {
             return false;
         }
     }
     list.insert(0, item);
-    if list.len() > MAX_CLIPS {
-        list.truncate(MAX_CLIPS);
+    sort_pinned_first(list);
+    // Не вытесняем закреплённые записи: обрезаем только незакреплённый хвост сверх MAX_CLIPS.
+    while list.len() > MAX_CLIPS {
+        if let Some(idx) = list.iter().rposition(|x| !x.pinned) {
+            list.remove(idx);
+        } else {
+            break;
+        }
     }
+    true
+}
+
+pub fn toggle_pin(list: &mut [ClipItem], id: u64) -> bool {
+    let Some(item) = list.iter_mut().find(|x| x.id == id) else {
+        return false;
+    };
+    item.pinned = !item.pinned;
+    sort_pinned_first(list);
     true
 }
 
@@ -363,25 +274,30 @@ fn describe() -> (Option<serde_json::Value>, Option<ClipItem>) {
                 .filter(|n| *n > 0)
                 .map(|n| json!({ "kind": "files", "count": n }));
             (v, None)
-        } else if available(CF_UNICODETEXT) {
-            match read_text_pair() {
-                Some((full, snip)) => (
+        } else {
+            let text_res = if available(CF_UNICODETEXT) {
+                read_text_pair()
+            } else {
+                None
+            };
+            if let Some((full, snip)) = text_res {
+                (
                     Some(json!({ "kind": "text", "text": snip })),
                     Some(ClipItem {
                         id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
                         kind: "text",
                         text: full,
                         preview: None,
+                        pinned: false,
                         png: None,
                     }),
-                ),
-                None => (None, None),
+                )
+            } else if available(png_fmt()) || available(CF_DIB) || available(CF_BITMAP) {
+                let img = read_image_item();
+                (Some(json!({ "kind": "image" })), img)
+            } else {
+                (None, None)
             }
-        } else if available(png_fmt()) || available(CF_DIB) || available(CF_BITMAP) {
-            let img = read_image_item();
-            (Some(json!({ "kind": "image" })), img)
-        } else {
-            (None, None)
         };
         let _ = CloseClipboard();
         out
@@ -599,6 +515,7 @@ mod tests {
                     kind: "text",
                     text: format!("item-{i}"),
                     preview: None,
+                    pinned: false,
                     png: None,
                 },
             );
@@ -612,10 +529,31 @@ mod tests {
                 kind: "text",
                 text: "item-5".to_string(),
                 preview: None,
+                pinned: false,
                 png: None,
             },
         );
         assert_eq!(list[0].text, "item-5");
+        assert_eq!(list.len(), MAX_CLIPS);
+
+        // Закрепление переносит запись наверх и защищает от вытеснения новыми копированиями.
+        assert!(toggle_pin(&mut list, 6));
+        assert!(list[0].pinned);
+        assert_eq!(list[0].text, "item-6");
+        for i in 100..108 {
+            push_clip_item(
+                &mut list,
+                ClipItem {
+                    id: i,
+                    kind: "text",
+                    text: format!("new-{i}"),
+                    preview: None,
+                    pinned: false,
+                    png: None,
+                },
+            );
+        }
+        assert!(list.iter().any(|x| x.text == "item-6" && x.pinned));
         assert_eq!(list.len(), MAX_CLIPS);
     }
 

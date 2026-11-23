@@ -10,23 +10,27 @@ use std::time::Duration;
 use serde::Serialize;
 use serde_json::json;
 use tauri::{AppHandle, Manager};
-use windows::core::{implement, interface, GUID, HRESULT, HSTRING, IUnknown, IUnknown_Vtbl, PCWSTR, PWSTR};
+use windows::core::{implement, interface, Interface, GUID, HRESULT, HSTRING, IUnknown, IUnknown_Vtbl, PCWSTR, PWSTR};
 use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
-use windows::Win32::Foundation::PROPERTYKEY;
+use windows::Win32::Foundation::{CloseHandle, PROPERTYKEY};
 use windows::Win32::Media::Audio::Endpoints::{
     IAudioEndpointVolume, IAudioEndpointVolumeCallback, IAudioEndpointVolumeCallback_Impl,
 };
 use windows::Win32::Media::Audio::{
-    eCommunications, eConsole, eMultimedia, eRender, EDataFlow, ERole, IMMDevice,
-    IMMDeviceEnumerator, IMMNotificationClient, IMMNotificationClient_Impl, MMDeviceEnumerator,
+    eCapture, eCommunications, eConsole, eMultimedia, eRender, AudioSessionStateActive, EDataFlow,
+    ERole, IAudioSessionControl2, IAudioSessionManager2, IMMDevice, IMMDeviceEnumerator,
+    IMMNotificationClient, IMMNotificationClient_Impl, ISimpleAudioVolume, MMDeviceEnumerator,
     PKEY_AudioEndpoint_FormFactor, AUDIO_VOLUME_NOTIFICATION_DATA, DEVICE_STATE,
     DEVICE_STATE_ACTIVE,
 };
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ,
 };
+use windows::Win32::System::Threading::{
+    OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+};
 
-use crate::{devices, publish, Shared};
+use crate::{devices, publish, wic, Shared};
 
 #[derive(Clone, Copy)]
 enum AudioEvt {
@@ -212,6 +216,9 @@ pub fn spawn(app: AppHandle) {
         };
 
         refresh_device(&mut ep, &mut dev_id, &mut quiet_volume);
+        if let Some(m) = mic_muted() {
+            publish(&app, "mic-mute", json!({ "muted": m, "silent": true }));
+        }
         if let Some(e) = &ep {
             if let Some(cur) = read_volume(e) {
                 last = Some(cur);
@@ -352,8 +359,8 @@ const CLSID_POLICY_CONFIG: GUID = GUID::from_u128(0x870af99c_171d_4f9e_af0d_e63d
 
 /// Возвращает список активных устройств вывода звука.
 pub fn list_devices() -> Vec<AudioDeviceInfo> {
+    let _com = wic::ComGuard::init_mta();
     unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         let Ok(en) = enumerator() else { return Vec::new() };
         let def_id = default_device(&en).ok().and_then(|d| device_id(&d));
         let Ok(col) = en.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE) else {
@@ -378,8 +385,8 @@ pub fn list_devices() -> Vec<AudioDeviceInfo> {
 
 /// Переключает устройство вывода звука по умолчанию на `id`.
 pub fn set_default_device(id: &str) -> bool {
+    let _com = wic::ComGuard::init_mta();
     unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         let Ok(pc): windows::core::Result<IPolicyConfig> =
             CoCreateInstance(&CLSID_POLICY_CONFIG, None, CLSCTX_ALL)
         else {
@@ -391,6 +398,240 @@ pub fn set_default_device(id: &str) -> bool {
         let _ = pc.set_default_endpoint(ptr, eMultimedia);
         let _ = pc.set_default_endpoint(ptr, eCommunications);
         ok1
+    }
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct AudioSessionInfo {
+    pub pid: u32,
+    pub name: String,
+    pub volume: u8,
+    pub muted: bool,
+    pub active: bool,
+}
+
+fn process_friendly_name(pid: u32) -> Option<String> {
+    if pid == 0 {
+        return None;
+    }
+    unsafe {
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut buf = [0u16; 260];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut len).is_ok();
+        let _ = CloseHandle(h);
+        if !ok || len == 0 {
+            return None;
+        }
+        let path = String::from_utf16_lossy(&buf[..len as usize]);
+        let stem = std::path::Path::new(&path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&path);
+        Some(pretty_proc_name(stem))
+    }
+}
+
+fn pretty_proc_name(raw: &str) -> String {
+    match raw.to_ascii_lowercase().as_str() {
+        "chrome" => "Chrome".to_string(),
+        "msedge" => "Edge".to_string(),
+        "firefox" => "Firefox".to_string(),
+        "brave" => "Brave".to_string(),
+        "opera" => "Opera".to_string(),
+        "vivaldi" => "Vivaldi".to_string(),
+        "spotify" => "Spotify".to_string(),
+        "discord" => "Discord".to_string(),
+        "telegram" => "Telegram".to_string(),
+        "vlc" => "VLC".to_string(),
+        "mpv" => "mpv".to_string(),
+        "steam" => "Steam".to_string(),
+        "code" => "VS Code".to_string(),
+        "obs64" | "obs32" => "OBS".to_string(),
+        _ => {
+            let mut chars = raw.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        }
+    }
+}
+
+/// Возвращает список аудио-сессий приложений на текущем устройстве вывода (микшер).
+pub fn list_sessions() -> Vec<AudioSessionInfo> {
+    let _com = wic::ComGuard::init_mta();
+    let own_pid = std::process::id();
+    unsafe {
+        let Ok(en) = enumerator() else { return Vec::new() };
+        let Ok(dev) = default_device(&en) else { return Vec::new() };
+        let Ok(mgr) = dev.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) else {
+            return Vec::new();
+        };
+        let Ok(sess_enum) = mgr.GetSessionEnumerator() else {
+            return Vec::new();
+        };
+        let count = sess_enum.GetCount().unwrap_or(0);
+        let mut out: Vec<AudioSessionInfo> = Vec::new();
+        for i in 0..count {
+            let Ok(ctrl) = sess_enum.GetSession(i) else { continue };
+            let Ok(ctrl2) = ctrl.cast::<IAudioSessionControl2>() else { continue };
+            if ctrl2.IsSystemSoundsSession() == windows::Win32::Foundation::S_OK {
+                continue;
+            }
+            let pid = ctrl2.GetProcessId().unwrap_or(0);
+            if pid == 0 || pid == own_pid {
+                continue;
+            }
+            let state = ctrl.GetState().ok();
+            let active = state == Some(AudioSessionStateActive);
+            let Ok(vol) = ctrl.cast::<ISimpleAudioVolume>() else { continue };
+            let level = vol.GetMasterVolume().unwrap_or(1.0);
+            let muted = vol.GetMute().map(|b| b.as_bool()).unwrap_or(false);
+            let pct = (level * 100.0).round().clamp(0.0, 100.0) as u8;
+
+            // Если один процесс открыл несколько сессий (например Chrome), объединяем их.
+            if let Some(existing) = out.iter_mut().find(|s| s.pid == pid) {
+                existing.active |= active;
+                continue;
+            }
+            let name = process_friendly_name(pid).unwrap_or_else(|| format!("PID {pid}"));
+            out.push(AudioSessionInfo {
+                pid,
+                name,
+                volume: pct,
+                muted,
+                active,
+            });
+        }
+        out.sort_by(|a, b| b.active.cmp(&a.active).then_with(|| a.name.cmp(&b.name)));
+        out
+    }
+}
+
+/// Устанавливает громкость (`0.0..=1.0`) для всех аудио-сессий процесса `pid`.
+pub fn set_session_volume(pid: u32, level: f32) {
+    let target = level.clamp(0.0, 1.0);
+    std::thread::spawn(move || {
+        let _com = wic::ComGuard::init_mta();
+        unsafe {
+            let Ok(en) = enumerator() else { return };
+            let Ok(dev) = default_device(&en) else { return };
+            let Ok(mgr) = dev.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) else { return };
+            let Ok(sess_enum) = mgr.GetSessionEnumerator() else { return };
+            let count = sess_enum.GetCount().unwrap_or(0);
+            for i in 0..count {
+                let Ok(ctrl) = sess_enum.GetSession(i) else { continue };
+                let Ok(ctrl2) = ctrl.cast::<IAudioSessionControl2>() else { continue };
+                if ctrl2.GetProcessId().unwrap_or(0) != pid {
+                    continue;
+                }
+                if let Ok(vol) = ctrl.cast::<ISimpleAudioVolume>() {
+                    if target > 0.0 && vol.GetMute().map(|b| b.as_bool()).unwrap_or(false) {
+                        let _ = vol.SetMute(false, std::ptr::null());
+                    }
+                    let _ = vol.SetMasterVolume(target, std::ptr::null());
+                }
+            }
+        }
+    });
+}
+
+/// Переключает Mute для всех аудио-сессий процесса `pid`.
+pub fn toggle_session_mute(pid: u32) -> bool {
+    let _com = wic::ComGuard::init_mta();
+    unsafe {
+        let Ok(en) = enumerator() else { return false };
+        let Ok(dev) = default_device(&en) else { return false };
+        let Ok(mgr) = dev.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) else {
+            return false;
+        };
+        let Ok(sess_enum) = mgr.GetSessionEnumerator() else {
+            return false;
+        };
+        let count = sess_enum.GetCount().unwrap_or(0);
+        let mut next_mute: Option<bool> = None;
+        for i in 0..count {
+            let Ok(ctrl) = sess_enum.GetSession(i) else { continue };
+            let Ok(ctrl2) = ctrl.cast::<IAudioSessionControl2>() else { continue };
+            if ctrl2.GetProcessId().unwrap_or(0) != pid {
+                continue;
+            }
+            if let Ok(vol) = ctrl.cast::<ISimpleAudioVolume>() {
+                let target = *next_mute.get_or_insert_with(|| {
+                    !vol.GetMute().map(|b| b.as_bool()).unwrap_or(false)
+                });
+                let _ = vol.SetMute(target, std::ptr::null());
+            }
+        }
+        next_mute.unwrap_or(false)
+    }
+}
+
+/// Возвращает имена приложений, которые прямо сейчас активно захватывают звук с любого микрофона (`eCapture`).
+/// Дополняет реестр `ConsentStore`, чтобы индикатор микрофона срабатывал надёжно в Discord/Chrome/OBS/играх.
+pub fn active_capture_apps() -> Vec<String> {
+    let _com = wic::ComGuard::init_mta();
+    let own_pid = std::process::id();
+    let mut out = Vec::new();
+    unsafe {
+        let Ok(en) = enumerator() else { return out };
+        let Ok(col) = en.EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE) else {
+            return out;
+        };
+        let dev_count = col.GetCount().unwrap_or(0);
+        for d in 0..dev_count {
+            let Ok(dev) = col.Item(d) else { continue };
+            let Ok(mgr) = dev.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) else { continue };
+            let Ok(sess_enum) = mgr.GetSessionEnumerator() else { continue };
+            let count = sess_enum.GetCount().unwrap_or(0);
+            for i in 0..count {
+                let Ok(ctrl) = sess_enum.GetSession(i) else { continue };
+                if ctrl.GetState().ok() != Some(AudioSessionStateActive) {
+                    continue;
+                }
+                let Ok(ctrl2) = ctrl.cast::<IAudioSessionControl2>() else { continue };
+                let pid = ctrl2.GetProcessId().unwrap_or(0);
+                if pid == 0 || pid == own_pid {
+                    continue;
+                }
+                let name = process_friendly_name(pid).unwrap_or_else(|| format!("PID {pid}"));
+                if !out.contains(&name) {
+                    out.push(name);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Читает текущее состояние Mute микрофона по умолчанию (`eCapture`).
+pub fn mic_muted() -> Option<bool> {
+    let _com = wic::ComGuard::init_mta();
+    unsafe {
+        let en = enumerator().ok()?;
+        let dev = en
+            .GetDefaultAudioEndpoint(eCapture, eConsole)
+            .or_else(|_| en.GetDefaultAudioEndpoint(eCapture, eCommunications))
+            .ok()?;
+        let ep = dev.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None).ok()?;
+        Some(ep.GetMute().ok()?.as_bool())
+    }
+}
+
+/// Переключает Mute микрофона по умолчанию и возвращает новое состояние (`true` = выключен).
+pub fn toggle_mic_mute() -> Option<bool> {
+    let _com = wic::ComGuard::init_mta();
+    unsafe {
+        let en = enumerator().ok()?;
+        let dev = en
+            .GetDefaultAudioEndpoint(eCapture, eConsole)
+            .or_else(|_| en.GetDefaultAudioEndpoint(eCapture, eCommunications))
+            .ok()?;
+        let ep = dev.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None).ok()?;
+        let next = !ep.GetMute().ok()?.as_bool();
+        ep.SetMute(next, std::ptr::null()).ok()?;
+        Some(next)
     }
 }
 

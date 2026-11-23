@@ -24,7 +24,7 @@
   <a href="#build">Build</a>
 </p>
 
-<a href="https://github.com/raiyaxkrash/dynamic-island/releases/latest/download/Dynamic-Island-0.6.1-x64-setup.exe"><img src="https://img.shields.io/badge/⬇_Download_Installer_(v0.6.1)-x64_.exe-0A84FF?style=for-the-badge" alt="Download Installer"></a>&nbsp;&nbsp;<a href="https://github.com/raiyaxkrash/dynamic-island/releases/latest/download/dynamic-island-0.6.1-x64-portable.exe"><img src="https://img.shields.io/badge/📦_Portable_Executable-No_Install-2C2C2E?style=for-the-badge" alt="Download Portable"></a>
+<a href="https://github.com/raiyaxkrash/dynamic-island/releases/latest/download/Dynamic-Island-0.7.0-x64-setup.exe"><img src="https://img.shields.io/badge/⬇_Download_Installer_(v0.7.0)-x64_.exe-0A84FF?style=for-the-badge" alt="Download Installer"></a>&nbsp;&nbsp;<a href="https://github.com/raiyaxkrash/dynamic-island/releases/latest/download/dynamic-island-0.7.0-x64-portable.exe"><img src="https://img.shields.io/badge/📦_Portable_Executable-No_Install-2C2C2E?style=for-the-badge" alt="Download Portable"></a>
 
 </div>
 
@@ -147,7 +147,7 @@
 
 ## 📦 Installation
 
-1. Grab the latest release from [GitHub Releases](https://github.com/raiyaxkrash/dynamic-island/releases/latest) (`Dynamic-Island-0.6.1-x64-setup.exe` or portable `.exe`).
+1. Grab the latest release from [GitHub Releases](https://github.com/raiyaxkrash/dynamic-island/releases/latest) (`Dynamic-Island-0.7.0-x64-setup.exe` or portable `.exe`).
 2. Launch **Dynamic Island** — the pill appears at the top of your screen and its icon lives in the Windows system tray (left-click the tray icon to open **Settings**; the UI automatically switches to **English** on English Windows systems).
 
 > [!NOTE]

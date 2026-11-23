@@ -33,6 +33,7 @@ mod settings;
 mod shelf;
 mod sysinfo;
 mod updater;
+mod wic;
 mod winmsg;
 
 use settings::{Settings, Stats};
@@ -66,6 +67,18 @@ pub struct Shared {
 /// Захват мьютекса без каскадных паник при отравлении.
 pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Атомарная запись файла через `.tmp` + `rename`, чтобы при внезапном выключении ПК конфиг не обнулился.
+pub(crate) fn write_atomic(path: &std::path::Path, data: &[u8]) {
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let tmp = path.with_extension("tmp");
+    if std::fs::write(&tmp, data).is_ok() && std::fs::rename(&tmp, path).is_err() {
+        let _ = std::fs::write(path, data);
+        let _ = std::fs::remove_file(&tmp);
+    }
 }
 
 /// Пишет диагностическое сообщение в `%APPDATA%\app.dynamicisland.desktop\island.log` с ротацией на 256 КБ.
@@ -161,12 +174,56 @@ fn set_audio_device(id: String) -> bool {
 }
 
 #[tauri::command]
-fn check_update(app: AppHandle) -> Value {
-    let info = updater::check(env!("CARGO_PKG_VERSION"));
+fn get_audio_sessions() -> Value {
+    json!(audio::list_sessions())
+}
+
+#[tauri::command]
+fn set_app_volume(pid: u32, level: f32) {
+    audio::set_session_volume(pid, level);
+}
+
+#[tauri::command]
+fn toggle_app_mute(pid: u32) -> bool {
+    audio::toggle_session_mute(pid)
+}
+
+#[tauri::command]
+async fn check_update(app: AppHandle) -> Value {
+    let info = tauri::async_runtime::spawn_blocking(|| updater::check(env!("CARGO_PKG_VERSION")))
+        .await
+        .unwrap_or_default();
     if info.available {
         publish(&app, "update", json!(info));
     }
     json!(info)
+}
+
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    let cached = lock(&app.state::<Shared>().snap).get("update").cloned();
+    let info: updater::UpdateInfo = match cached.and_then(|v| serde_json::from_value(v).ok()) {
+        Some(i) => i,
+        None => tauri::async_runtime::spawn_blocking(|| updater::check(env!("CARGO_PKG_VERSION")))
+            .await
+            .map_err(|_| "network".to_string())?,
+    };
+    if !info.available {
+        return Err("latest".to_string());
+    }
+    let (Some(dl_url), Some(asset_name)) = (info.download_url.clone(), info.asset_name.clone()) else {
+        open_release_url(info.url);
+        return Ok(());
+    };
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        updater::download_and_install(&dl_url, &asset_name, |pct| {
+            let _ = handle.emit("update-progress", pct);
+        })
+    })
+    .await
+    .map_err(|_| "network".to_string())?
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -203,6 +260,12 @@ fn shelf_clear(app: AppHandle) {
 #[tauri::command]
 fn shelf_drag(path: String) {
     shelf::start_drag(path);
+}
+
+#[tauri::command]
+fn shelf_drag_all(state: tauri::State<Shared>) {
+    let paths: Vec<String> = lock(&state.shelf).iter().map(|i| i.path.clone()).collect();
+    shelf::start_drag_many(paths);
 }
 
 #[tauri::command]
@@ -269,6 +332,19 @@ fn clips_clear(app: AppHandle) {
 }
 
 #[tauri::command]
+fn clip_pin(app: AppHandle, id: u64) {
+    let items = {
+        let shared = app.state::<Shared>();
+        let mut clips = lock(&shared.clips);
+        if !clipboard::toggle_pin(&mut clips, id) {
+            return;
+        }
+        clips.clone()
+    };
+    publish(&app, "clips", json!(items));
+}
+
+#[tauri::command]
 fn volume_step(delta: f32) {
     audio::step(delta);
 }
@@ -281,6 +357,13 @@ fn volume_set(level: f32) {
 #[tauri::command]
 fn volume_mute_toggle() {
     audio::toggle_mute();
+}
+
+#[tauri::command]
+fn mic_mute_toggle(app: AppHandle) -> Option<bool> {
+    let muted = audio::toggle_mic_mute()?;
+    publish(&app, "mic-mute", json!({ "muted": muted, "silent": false }));
+    Some(muted)
 }
 
 /// Отчёт о плавности анимации из демо-режима (`--demo`): печатается только в отладочной сборке.
@@ -320,6 +403,9 @@ fn get_settings(state: tauri::State<Shared>) -> Value {
     v["hotkey_toggle_ok"] = json!(hk_toggle_ok);
     v["hotkey_timer_ok"] = json!(hk_timer_ok);
     v["hotkey_capsule_ok"] = json!(hk_capsule_ok);
+    if let Some(upd) = lock(&state.snap).get("update").cloned() {
+        v["update"] = upd;
+    }
     v
 }
 
@@ -366,6 +452,9 @@ fn set_setting(app: AppHandle, key: String, value: Value) -> Value {
                 if !matches!(updated.over_maximized.as_str(), "sliver" | "pill" | "hide") {
                     updated.over_maximized = "sliver".to_string();
                 }
+                if !matches!(updated.capsule_size.as_str(), "compact" | "normal" | "large") {
+                    updated.capsule_size = "normal".to_string();
+                }
                 let valid_accent = updated.accent_color == "auto"
                     || (updated.accent_color.len() == 7
                         && updated.accent_color.starts_with('#')
@@ -403,7 +492,6 @@ fn set_setting(app: AppHandle, key: String, value: Value) -> Value {
         }
         if matches!(key.as_str(), "hotkeys" | "hotkey_toggle" | "hotkey_timer" | "hotkey_capsule") {
             hotkeys::sync();
-            std::thread::sleep(std::time::Duration::from_millis(25));
         }
         publish_settings(&app);
     }
@@ -424,7 +512,6 @@ fn reset_settings(app: AppHandle) -> Value {
     }
     sync_tray_labels(&app);
     hotkeys::sync();
-    std::thread::sleep(std::time::Duration::from_millis(25));
     publish_settings(&app);
     get_settings(app.state::<Shared>())
 }
@@ -625,6 +712,7 @@ pub fn run() {
             volume_step,
             volume_set,
             volume_mute_toggle,
+            mic_mute_toggle,
             perf,
             pomodoro_done,
             get_settings,
@@ -635,16 +723,22 @@ pub fn run() {
             open_sound_settings,
             get_audio_devices,
             set_audio_device,
+            get_audio_sessions,
+            set_app_volume,
+            toggle_app_mute,
             check_update,
+            install_update,
             open_release_url,
             shelf_remove,
             shelf_clear,
             shelf_drag,
+            shelf_drag_all,
             shelf_reveal,
             shelf_open,
             shelf_from_clipboard,
             clip_copy,
             clip_drag,
+            clip_pin,
             clips_clear
         ])
         .on_window_event(|win, event| {
@@ -728,12 +822,25 @@ pub fn run() {
                 }
             });
 
-            // Тихая проверка новой версии на GitHub через 10 секунд после старта.
+            // Тихая проверка новой версии на GitHub: старт через 10с (с ретраями, если сеть ещё не поднялась)
+            // и далее периодически каждые 6 часов.
             std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_secs(10));
-                let info = updater::check(env!("CARGO_PKG_VERSION"));
-                if info.available {
-                    publish(&handle, "update", json!(info));
+                let mut wait = std::time::Duration::from_secs(10);
+                let mut retries = 0u8;
+                loop {
+                    std::thread::sleep(wait);
+                    let info = updater::check(env!("CARGO_PKG_VERSION"));
+                    if info.available {
+                        publish(&handle, "update", json!(info));
+                        wait = std::time::Duration::from_secs(6 * 3600);
+                        retries = 0;
+                    } else if info.error.as_deref() == Some("network") && retries < 2 {
+                        retries += 1;
+                        wait = std::time::Duration::from_secs(if retries == 1 { 60 } else { 300 });
+                    } else {
+                        wait = std::time::Duration::from_secs(6 * 3600);
+                        retries = 0;
+                    }
                 }
             });
 

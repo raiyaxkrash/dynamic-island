@@ -71,7 +71,7 @@
     h2 { margin: 4px 0 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--dim); }
     .card { background: var(--card); border-radius: 14px; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.04); }
     .row { display: flex; align-items: center; gap: 12px; padding: 11px 15px; min-height: 50px; }
-    .row.compact { min-height: 40px; padding-bottom: 8px; }
+    .row.compact { min-height: 40px; padding-bottom: 8px; border-bottom: none; }
     .row + .row { border-top: 1px solid var(--line); }
     .txt { flex: 1; min-width: 0; }
     .t { font-size: 13.5px; font-weight: 500; }
@@ -125,6 +125,13 @@
     .swatch.auto {
       background: conic-gradient(from 45deg, #ff5e62, #ff9f0a, #30d158, #5ac8fa, #0a84ff, #bf5af2, #ff5e62);
     }
+    .swatch[data-accent="#0a84ff"] { background: #0a84ff; }
+    .swatch[data-accent="#5ac8fa"] { background: #5ac8fa; }
+    .swatch[data-accent="#bf5af2"] { background: #bf5af2; }
+    .swatch[data-accent="#ff375f"] { background: #ff375f; }
+    .swatch[data-accent="#ff9f0a"] { background: #ff9f0a; }
+    .swatch[data-accent="#30d158"] { background: #30d158; }
+    .swatch[data-accent="#f5f5f7"] { background: #f5f5f7; }
 
     .kbtn, .actbtn {
       flex: none;
@@ -172,13 +179,13 @@
           </div>
           <div class="swatches" id="accentSwatches" role="group">
             <button type="button" class="swatch auto" data-accent="auto" title="Auto"></button>
-            <button type="button" class="swatch" data-accent="#0a84ff" style="background:#0a84ff" title="Blue"></button>
-            <button type="button" class="swatch" data-accent="#5ac8fa" style="background:#5ac8fa" title="Cyan"></button>
-            <button type="button" class="swatch" data-accent="#bf5af2" style="background:#bf5af2" title="Purple"></button>
-            <button type="button" class="swatch" data-accent="#ff375f" style="background:#ff375f" title="Pink"></button>
-            <button type="button" class="swatch" data-accent="#ff9f0a" style="background:#ff9f0a" title="Amber"></button>
-            <button type="button" class="swatch" data-accent="#30d158" style="background:#30d158" title="Green"></button>
-            <button type="button" class="swatch" data-accent="#f5f5f7" style="background:#f5f5f7" title="White"></button>
+            <button type="button" class="swatch" data-accent="#0a84ff" title="Blue"></button>
+            <button type="button" class="swatch" data-accent="#5ac8fa" title="Cyan"></button>
+            <button type="button" class="swatch" data-accent="#bf5af2" title="Purple"></button>
+            <button type="button" class="swatch" data-accent="#ff375f" title="Pink"></button>
+            <button type="button" class="swatch" data-accent="#ff9f0a" title="Amber"></button>
+            <button type="button" class="swatch" data-accent="#30d158" title="Green"></button>
+            <button type="button" class="swatch" data-accent="#f5f5f7" title="White"></button>
           </div>
 
           <div class="row compact" style="border-bottom:none">
@@ -237,8 +244,31 @@
       <section>
         <div class="card">
           <label class="row" for="capsule_only">
-            <div class="txt"><div class="t" data-i18n="s_capsule_only">Режим «Просто капсула»</div><div class="d" data-i18n="s_capsule_only_d">Только чистая click-through капсула без раскрытий и всплывающих окон (Ctrl+Alt+M)</div></div>
+            <div class="txt"><div class="t" data-i18n="s_capsule_only">Режим «Просто капсула»</div><div class="d" data-i18n="s_capsule_only_d">Компактная click-through капсула без раскрытий и всплывающих окон (Ctrl+Alt+M)</div></div>
             <span class="sw"><input type="checkbox" id="capsule_only" data-key="capsule_only"><span></span></span>
+          </label>
+
+          <div class="row compact" style="border-bottom:none">
+            <div class="txt"><div class="t" data-i18n="s_cap_size">Размер капсулы и мини-плеера</div><div class="d" data-i18n="s_cap_size_d">Компактность свёрнутого острова и мини-плеера</div></div>
+          </div>
+          <div class="seg" data-seg="capsule_size" data-default="normal" role="group">
+            <span class="pill"></span>
+            <button type="button" data-v="compact" data-i18n="s_cap_compact">Компактная</button>
+            <button type="button" data-v="normal" data-i18n="s_cap_normal">Обычная</button>
+            <button type="button" data-v="large" data-i18n="s_cap_large">Крупная</button>
+          </div>
+
+          <label class="row" for="capsule_media">
+            <div class="txt"><div class="t" data-i18n="s_cap_media">Мини-плеер в «Просто капсуле»</div><div class="d" data-i18n="s_cap_media_d">Показывать обложку и эквалайзер, когда играет музыка</div></div>
+            <span class="sw"><input type="checkbox" id="capsule_media" data-key="capsule_media"><span></span></span>
+          </label>
+          <label class="row" for="capsule_timer">
+            <div class="txt"><div class="t" data-i18n="s_cap_timer">Мини-таймер в «Просто капсуле»</div></div>
+            <span class="sw"><input type="checkbox" id="capsule_timer" data-key="capsule_timer"><span></span></span>
+          </label>
+          <label class="row" for="capsule_clock">
+            <div class="txt"><div class="t" data-i18n="s_cap_clock">Часы в «Просто капсуле»</div><div class="d" data-i18n="s_cap_clock_d">Показывать время в покое, чтобы капсула не была пустой</div></div>
+            <span class="sw"><input type="checkbox" id="capsule_clock" data-key="capsule_clock"><span></span></span>
           </label>
 
           <div class="row compact" style="border-bottom:none">
