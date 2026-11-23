@@ -1,8 +1,9 @@
 // Логика окна настроек (внешний скрипт для строгой совместимости с CSP `script-src 'self'`).
 (() => {
-  const { invoke } = window.__TAURI__.core;
-  const { listen } = window.__TAURI__.event;
-  const win = window.__TAURI__.window.getCurrentWindow();
+  const tauri = window.__TAURI__;
+  const invoke = tauri ? tauri.core.invoke : async (cmd) => (cmd === 'get_settings' ? { accent_color: 'auto', backdrop: 'oled', border_style: 'subtle', ui_scale: 100, idle_style: 'pill', clock_24h: true, animations: true, hotkeys: true, lang: 'ru' } : cmd === 'app_version' ? '0.7.4' : {});
+  const listen = tauri ? tauri.event.listen : () => {};
+  const win = tauri ? tauri.window.getCurrentWindow() : { hide: () => {}, show: () => {}, setFocus: () => {} };
   const I18N = window.DI_I18N;
 
   const tabs = [...document.querySelectorAll('.tab-btn')];

@@ -1,6 +1,6 @@
 [package]
 name = "dynamic-island"
-version = "0.7.3"
+version = "0.7.4"
 description = "Dynamic Island для Windows"
 edition = "2021"
 publish = false
